@@ -22,6 +22,7 @@ function App() {
   const [activeId, setActiveId] = useState('doc-1')
   const [query, setQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
   const [saveState, setSaveState] = useState('Loading notes...')
   const notesLoaded = useRef(false)
@@ -84,7 +85,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${darkMode ? 'theme-dark' : ''}`}>
       <aside className={`sidebar ${menuOpen ? 'is-open' : ''}`}>
         <div className="brand-mark"><span className="brand-symbol">NJ</span><span><strong>Noggin</strong> Joggin</span></div>
         <div className="edition">FIELD GUIDE <span>v1.0</span></div>
@@ -95,7 +96,7 @@ function App() {
         <div className="sidebar-footer"><span className="status-dot" /> Archive synced <span>⌘ K</span></div>
       </aside>
       <main className="main-content">
-        <header className="topbar"><button className="menu-button" type="button" aria-label="Toggle navigation" onClick={() => setMenuOpen(!menuOpen)}>☰</button><div className="breadcrumbs"><span>NOGGIN JOGGIN</span><b>/</b>{activeArticle.section.toUpperCase()}<b>/</b><strong>{activeArticle.title.toUpperCase()}</strong></div><label className="search-box"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the guide..." aria-label="Search the guide" /><kbd>⌘ K</kbd></label></header>
+        <header className="topbar"><button className="menu-button" type="button" aria-label="Toggle navigation" onClick={() => setMenuOpen(!menuOpen)}>☰</button><div className="breadcrumbs"><span>NOGGIN JOGGIN</span><b>/</b>{activeArticle.section.toUpperCase()}<b>/</b><strong>{activeArticle.title.toUpperCase()}</strong></div><label className="search-box"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the guide..." aria-label="Search the guide" /><kbd>⌘ K</kbd></label><button className="theme-toggle" type="button" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDarkMode(!darkMode)}>{darkMode ? '☼' : '☾'}</button></header>
         <div className="content-wrap">
           <section className="intro-block"><div className="eyebrow">{activeArticle.kicker} <span>//</span> {activeArticle.label} / {String(articles.length).padStart(2, '0')}</div><h1>{activeArticle.title}</h1><p className="lead">{activeArticle.summary}</p><div className="tag-row">{activeArticle.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
           <div className="rule" />
