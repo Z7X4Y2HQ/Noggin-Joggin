@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Runtime notes stay on each server and are never merged by Git.
+data/notes.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
