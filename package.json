@@ -1,12 +1,13 @@
 {
   "name": "noggin-joggin",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "start": "node server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
