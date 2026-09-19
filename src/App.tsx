@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { articles } from './content'
 import './App.css'
 const sections = [...new Set(articles.map((article) => article.section))]
@@ -48,6 +48,10 @@ function App() {
   const [initialUrlState] = useState(readUrlState)
   const [activeId, setActiveId] = useState(initialUrlState.articleId)
   const [query, setQuery] = useState('')
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(themeStorageKey) === 'dark')
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
@@ -112,6 +116,20 @@ function App() {
     reader.readAsText(file)
   }
   const openImportPicker = () => importInputRef.current?.click()
+
+  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (username === 'Ywen Wander' && password === 'whyeven') {
+      setIsAuthenticated(true)
+      setLoginError('')
+      return
+    }
+    setLoginError('That username or password is not correct.')
+  }
+
+  if (!isAuthenticated) {
+    return <main className={`login-screen ${darkMode ? 'theme-dark' : ''}`}><button className="login-theme-toggle" type="button" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => { const nextMode = !darkMode; setDarkMode(nextMode); localStorage.setItem(themeStorageKey, nextMode ? 'dark' : 'light') }}>{darkMode ? '☼' : '☾'}</button><div className="login-panel"><div className="login-brand"><span className="brand-symbol">NJ</span><span><strong>Noggin</strong> Joggin</span></div><div className="login-kicker">FIELD GUIDE // PRIVATE ACCESS</div><h1>Welcome back.</h1><p>Enter your credentials to open the story archive.</p><form onSubmit={handleLogin}><label>Username<input type="text" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError && <div className="login-error" role="alert">{loginError}</div>}<button type="submit">Enter the archive <span>→</span></button></form></div><div className="login-mark">NJ / 01</div></main>
+  }
 
   return (
     <div className={`app-shell ${darkMode ? 'theme-dark' : ''}`}>
