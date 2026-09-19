@@ -1,19 +1,42 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { articles } from './content'
 import './App.css'
 const sections = [...new Set(articles.map((article) => article.section))]
+const storageKey = 'noggin-joggin-field-values'
+
+type FieldValues = Record<string, string>
+
+function loadFieldValues(): FieldValues {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) ?? '{}') as unknown
+    if (saved && typeof saved === 'object' && 'fields' in saved && saved.fields && typeof saved.fields === 'object') return saved.fields as FieldValues
+    if (saved && typeof saved === 'object') return saved as FieldValues
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+function NoteField({ fieldId, label, value, onChange }: { fieldId: string; label: string; value: string; onChange: (fieldId: string, value: string) => void }) {
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const resize = () => {
+    if (!inputRef.current) return
+    inputRef.current.style.height = '0px'
+    inputRef.current.style.height = `${Math.max(inputRef.current.scrollHeight, 31)}px`
+  }
+
+  useEffect(() => resize(), [value])
+
+  return <label className="field-row"><span>{label}</span><textarea ref={inputRef} value={value} onChange={(event) => { onChange(fieldId, event.target.value); resize() }} placeholder="Write here..." rows={1} /></label>
+}
 
 function App() {
   const [activeId, setActiveId] = useState('doc-1')
   const [query, setQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('noggin-joggin-field-values') ?? '{}') as Record<string, string>
-    } catch {
-      return {}
-    }
-  })
+  const [fieldValues, setFieldValues] = useState<FieldValues>(loadFieldValues)
+  const [saveState, setSaveState] = useState('Saved locally')
+  const importInputRef = useRef<HTMLInputElement>(null)
   const activeArticle = articles.find((article) => article.id === activeId) ?? articles[0]
   const filteredArticles = useMemo(() => {
     const normalizedQuery = query.toLowerCase().trim()
@@ -27,9 +50,34 @@ function App() {
   const updateField = (fieldId: string, value: string) => {
     setFieldValues((currentValues) => {
       const nextValues = { ...currentValues, [fieldId]: value }
-      localStorage.setItem('noggin-joggin-field-values', JSON.stringify(nextValues))
+      localStorage.setItem(storageKey, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), fields: nextValues }))
       return nextValues
     })
+    setSaveState('Saved locally')
+  }
+  const exportNotes = () => {
+    const file = new Blob([JSON.stringify({ app: 'Noggin Joggin', version: 1, savedAt: new Date().toISOString(), fields: fieldValues }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'noggin-joggin-notes.json'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  const importNotes = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result)) as { fields?: FieldValues }
+        if (!parsed.fields || typeof parsed.fields !== 'object') throw new Error('Invalid notes file')
+        setFieldValues(parsed.fields)
+        localStorage.setItem(storageKey, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), fields: parsed.fields }))
+        setSaveState('Imported and saved')
+      } catch {
+        setSaveState('Could not import file')
+      }
+    }
+    reader.readAsText(file)
   }
 
   return (
@@ -48,7 +96,7 @@ function App() {
         <div className="content-wrap">
           <section className="intro-block"><div className="eyebrow">{activeArticle.kicker} <span>//</span> {activeArticle.label} / {String(articles.length).padStart(2, '0')}</div><h1>{activeArticle.title}</h1><p className="lead">{activeArticle.summary}</p><div className="tag-row">{activeArticle.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
           <div className="rule" />
-          {query ? <section className="search-results"><div className="section-heading"><span>SEARCH RESULTS</span><small>{filteredArticles.length} matches</small></div>{filteredArticles.length ? filteredArticles.map((article) => <button className="result-row" type="button" key={article.id} onClick={() => selectArticle(article.id)}><span>{article.label}</span><strong>{article.title}</strong><small>{article.section}</small><i>↗</i></button>) : <p className="empty-state">No field notes match “{query}”.</p>}</section> : <article className="article-body"><div className="section-heading"><span>FILL IN THIS SECTION</span><small>{activeArticle.body.length || 1} FIELDS</small></div><div className="field-list">{(activeArticle.body.length ? activeArticle.body : ['Section notes']).map((fieldLabel, index) => { const fieldId = `${activeArticle.id}-${index}`; return <label className="field-row" key={fieldId}><span>{fieldLabel}</span><textarea value={fieldValues[fieldId] ?? ''} onChange={(event) => updateField(fieldId, event.target.value)} placeholder="Add your notes here..." rows={2} /></label> })}</div><blockquote>“The best discoveries are usually hiding in the detail you almost skipped.”</blockquote><div className="quick-links"><div><span className="quick-number">A</span><div><small>PREVIOUS ENTRY</small><button type="button" onClick={() => previousArticle && selectArticle(previousArticle.id)}>{previousArticle?.title ?? 'Start of document'} <b>↗</b></button></div></div><div><span className="quick-number">B</span><div><small>NEXT ENTRY</small><button type="button" onClick={() => nextArticle && selectArticle(nextArticle.id)}>{nextArticle?.title ?? 'End of document'} <b>↗</b></button></div></div></div></article>}
+          {query ? <section className="search-results"><div className="section-heading"><span>SEARCH RESULTS</span><small>{filteredArticles.length} matches</small></div>{filteredArticles.length ? filteredArticles.map((article) => <button className="result-row" type="button" key={article.id} onClick={() => selectArticle(article.id)}><span>{article.label}</span><strong>{article.title}</strong><small>{article.section}</small><i>↗</i></button>) : <p className="empty-state">No field notes match “{query}”.</p>}</section> : <article className="article-body"><div className="section-heading"><span>FILL IN THIS SECTION</span><div className="section-tools"><small>{saveState}</small><button type="button" onClick={exportNotes}>Export JSON</button><button type="button" onClick={() => importInputRef.current?.click()}>Import JSON</button><input ref={importInputRef} type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importNotes(file); event.target.value = '' }} /></div></div><div className="field-list">{(activeArticle.body.length ? activeArticle.body : ['Section notes']).map((fieldLabel, index) => { const fieldId = `${activeArticle.id}-${index}`; return <NoteField fieldId={fieldId} label={fieldLabel} value={fieldValues[fieldId] ?? ''} onChange={updateField} key={fieldId} /> })}</div><blockquote>“The best discoveries are usually hiding in the detail you almost skipped.”</blockquote><div className="quick-links"><div><span className="quick-number">A</span><div><small>PREVIOUS ENTRY</small><button type="button" onClick={() => previousArticle && selectArticle(previousArticle.id)}>{previousArticle?.title ?? 'Start of document'} <b>↗</b></button></div></div><div><span className="quick-number">B</span><div><small>NEXT ENTRY</small><button type="button" onClick={() => nextArticle && selectArticle(nextArticle.id)}>{nextArticle?.title ?? 'End of document'} <b>↗</b></button></div></div></div></article>}
           {!query && <footer className="article-footer"><button type="button" disabled={!previousArticle} onClick={() => previousArticle && selectArticle(previousArticle.id)}><span>←</span><small>PREVIOUS</small><strong>{previousArticle?.title ?? 'Start'}</strong></button><button type="button" disabled={!nextArticle} onClick={() => nextArticle && selectArticle(nextArticle.id)}><small>NEXT</small><strong>{nextArticle?.title ?? 'End of guide'}</strong><span>→</span></button></footer>}
         </div>
       </main>
