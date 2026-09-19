@@ -12,6 +12,9 @@ type SearchResult = {
   excerpt: string;
   isNote: boolean;
 };
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
 
 type UrlState = { articleId: string; fieldId: string; cursor: number };
 
@@ -114,7 +117,7 @@ function App() {
   const activeArticle =
     articles.find((article) => article.id === activeId) ?? articles[0];
   const searchResults = useMemo(() => {
-    const normalizedQuery = query.toLowerCase().trim();
+    const normalizedQuery = normalizeSearchText(query);
     if (!normalizedQuery) return [];
     return articles.flatMap((article) => {
       const headingMatches: SearchResult[] = [];
@@ -127,7 +130,8 @@ function App() {
       ]
         .join(" ")
         .toLowerCase();
-      if (articleText.includes(normalizedQuery))
+      const normalizedArticleText = normalizeSearchText(articleText);
+      if (normalizedArticleText.includes(normalizedQuery))
         headingMatches.push({
           article,
           fieldId: "",
@@ -138,8 +142,12 @@ function App() {
       article.body.forEach((fieldLabel, index) => {
         const fieldId = `${article.id}-${index}`;
         const note = fieldValues[fieldId] ?? "";
-        if (!note.toLowerCase().includes(normalizedQuery)) return;
-        const matchStart = note.toLowerCase().indexOf(normalizedQuery);
+        const normalizedNote = normalizeSearchText(note);
+        if (!normalizedNote.includes(normalizedQuery)) return;
+        const matchStart = Math.max(
+          0,
+          normalizedNote.indexOf(normalizedQuery),
+        );
         const excerptStart = Math.max(0, matchStart - 42);
         const excerpt = `${excerptStart > 0 ? "... " : ""}${note.slice(excerptStart, excerptStart + 120)}${note.length > excerptStart + 120 ? " ..." : ""}`;
         noteMatches.push({
@@ -155,6 +163,7 @@ function App() {
   }, [fieldValues, query]);
   const selectArticle = (id: string) => {
     setActiveId(id);
+    setQuery("");
     setFocusedField({ fieldId: "", cursor: 0 });
     writeUrlState(id);
     setMenuOpen(false);
