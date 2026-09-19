@@ -23,6 +23,15 @@ PORT=3000 npm start
 
 Open TCP port `3000` in the Oracle Cloud VCN security list and the instance firewall, or place Nginx/Caddy in front of the app on ports 80/443. For a persistent process, use a systemd service or PM2. Notes continue to save to `data/notes.json` on the server. That runtime file is intentionally ignored by Git, so future pulls cannot overwrite or conflict with server notes.
 
+After the first setup, update and restart the Oracle deployment with:
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+The script pulls the latest commit, installs dependencies, builds the app, replaces the process on port `3000`, and writes server output to `noggin-joggin.log`.
+
 ## Notes storage
 
 Run the app with `npm run dev` to edit the guide. Notes are automatically saved to `data/notes.json` in the project folder through the local Vite server. The tracked `data/notes.example.json` file documents the expected shape, while the runtime notes file stays local to each deployment. The Export JSON and Import JSON controls provide an additional backup workflow.
