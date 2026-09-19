@@ -139,7 +139,8 @@ function App() {
           excerpt: article.title,
           isNote: false,
         });
-      article.body.forEach((fieldLabel, index) => {
+      const fieldLabels = article.body.length ? article.body : ["Section notes"];
+      fieldLabels.forEach((fieldLabel, index) => {
         const fieldId = `${article.id}-${index}`;
         const note = fieldValues[fieldId] ?? "";
         const normalizedNote = normalizeSearchText(note);
