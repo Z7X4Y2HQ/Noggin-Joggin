@@ -1,4 +1,4 @@
-﻿export type Article = { id: string; section: string; label: string; title: string; kicker: string; summary: string; body: string[]; tags: string[] }
+export type Article = { id: string; section: string; label: string; title: string; kicker: string; summary: string; body: string[]; tags: string[] }
 
 export const articles: Article[] = [
   {
@@ -86,9 +86,9 @@ export const articles: Article[] = [
     "label": "005",
     "title": "1.3 Design Pillars",
     "kicker": "Section notes",
-    "summary": "Define approximately 3â€“6 principles that guide design decisions.",
+    "summary": "Define approximately 3–6 principles that guide design decisions.",
     "body": [
-      "Define approximately 3â€“6 principles that guide design decisions.",
+      "Define approximately 3–6 principles that guide design decisions.",
       "Example: Player choice matters",
       "Example: Characters feel human",
       "Example: Consequences are persistent",
@@ -307,7 +307,7 @@ export const articles: Article[] = [
     "id": "doc-18",
     "section": "5. Characters",
     "label": "018",
-    "title": "5.1 Character Profile â€” repeat for every major character",
+    "title": "5.1 Character Profile — repeat for every major character",
     "kicker": "Section notes",
     "summary": "Name",
     "body": [
@@ -882,9 +882,9 @@ export const articles: Article[] = [
     "label": "051",
     "title": "15.1 Core Gameplay Loop",
     "kicker": "Section notes",
-    "summary": "Define the repeated player loop, e.g. Explore â†’ Discover â†’ Interact â†’ Decide â†’ Experience consequence â†’ Continue story.",
+    "summary": "Define the repeated player loop, e.g. Explore → Discover → Interact → Decide → Experience consequence → Continue story.",
     "body": [
-      "Define the repeated player loop, e.g. Explore â†’ Discover â†’ Interact â†’ Decide â†’ Experience consequence â†’ Continue story."
+      "Define the repeated player loop, e.g. Explore → Discover → Interact → Decide → Experience consequence → Continue story."
     ],
     "tags": [
       "15. Gameplay Design"
@@ -2827,7 +2827,7 @@ export const articles: Article[] = [
     "summary": "Define what 'done' means for each major system.",
     "body": [
       "Define what 'done' means for each major system.",
-      "Example â€” Dialogue system: dialogue displays; multiple speakers work; choices work; conditions work; variables update; save/load works; localization works; voice can be attached; skip works; controller works; no known critical bugs."
+      "Example — Dialogue system: dialogue displays; multiple speakers work; choices work; conditions work; variables update; save/load works; localization works; voice can be attached; skip works; controller works; no known critical bugs."
     ],
     "tags": [
       "55. Definition of Done"
@@ -3100,11 +3100,11 @@ export const articles: Article[] = [
   },
   {
     "id": "doc-178",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "178",
-    "title": "Appendix A â€” Master Tables",
+    "title": "Appendix A — Master Tables",
     "kicker": "Documentation section",
-    "summary": "Reference notes for Appendix A â€” Master Tables.",
+    "summary": "Reference notes for Appendix A — Master Tables.",
     "body": [],
     "tags": [
       "Requirements"
@@ -3112,93 +3112,93 @@ export const articles: Article[] = [
   },
   {
     "id": "doc-179",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "179",
     "title": "Character Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Character Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-180",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "180",
     "title": "Scene Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Scene Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-181",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "181",
     "title": "Choice Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Choice Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-182",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "182",
     "title": "Variable Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Variable Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-183",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "183",
     "title": "Asset Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Asset Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-184",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "184",
     "title": "Ending Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Ending Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-185",
-    "section": "Appendix A â€” Master Tables",
+    "section": "Appendix A — Master Tables",
     "label": "185",
     "title": "Dialogue Master Table",
     "kicker": "Section notes",
     "summary": "Reference notes for Dialogue Master Table.",
     "body": [],
     "tags": [
-      "Appendix A â€” Master Tables"
+      "Appendix A — Master Tables"
     ]
   },
   {
     "id": "doc-186",
-    "section": "Appendix B â€” Project Notes",
+    "section": "Appendix B — Project Notes",
     "label": "186",
-    "title": "Appendix B â€” Project Notes",
+    "title": "Appendix B — Project Notes",
     "kicker": "Documentation section",
     "summary": "Use this area for miscellaneous ideas, references, unresolved questions, research, and decisions that have not yet been assigned to a specific section.",
     "body": [
