@@ -863,6 +863,9 @@
   }
 }
 @media (max-width: 760px) {
+  .login-screen::before {
+    display: none;
+  }
   .app-shell {
     display: block;
   }
