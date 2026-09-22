@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { articles } from "./content";
+import { keepCursorInView } from "./caret";
 import "./App.css";
 const sections = [...new Set(articles.map((article) => article.section))];
 const themeStorageKey = "noggin-joggin-theme";
@@ -58,18 +59,73 @@ function NoteField({
   onCursorChange: (fieldId: string, cursor: number) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
   const resize = () => {
-    if (!inputRef.current) return;
-    inputRef.current.style.height = "0px";
-    inputRef.current.style.height = `${Math.max(inputRef.current.scrollHeight, 31)}px`;
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    const parent = textarea.parentElement;
+
+    const prevScrollY = window.scrollY;
+
+    // Prevent parent container and document height from collapsing,
+    // which would cause the browser to clamp scrollY upwards
+    if (parent) {
+      parent.style.minHeight = `${parent.offsetHeight}px`;
+    }
+
+    textarea.style.height = "auto";
+    const computed = window.getComputedStyle(textarea);
+    const borderBoxOffset =
+      computed.boxSizing === "border-box"
+        ? (parseFloat(computed.borderTopWidth) || 0) +
+          (parseFloat(computed.borderBottomWidth) || 0)
+        : 0;
+    const newHeight = Math.max(textarea.scrollHeight + borderBoxOffset, 31);
+    textarea.style.height = `${newHeight}px`;
+
+    if (parent) {
+      parent.style.minHeight = "";
+    }
+
+    // If window.scrollY was shifted during measurement, restore it immediately
+    if (window.scrollY !== prevScrollY) {
+      window.scrollTo({ top: prevScrollY });
+    }
   };
 
-  useEffect(() => resize(), [value]);
+  useLayoutEffect(() => {
+    resize();
+  }, [value]);
+
+  // Handle focusOnLoad: only programmatically focus if not already focused
   useEffect(() => {
     if (!focusOnLoad || !inputRef.current) return;
-    inputRef.current.focus();
+    if (document.activeElement === inputRef.current) return;
+
+    inputRef.current.focus({ preventScroll: true });
     inputRef.current.setSelectionRange(cursor, cursor);
-  }, [cursor, focusOnLoad]);
+    keepCursorInView(inputRef.current, { alignMiddle: true });
+  }, [focusOnLoad, cursor]);
+
+  // Keep cursor visible when mobile virtual keyboard opens/resizes or visualViewport scrolls
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const handleViewportChange = () => {
+      if (inputRef.current && document.activeElement === inputRef.current) {
+        keepCursorInView(inputRef.current, { immediate: false });
+      }
+    };
+
+    vv.addEventListener("resize", handleViewportChange);
+    vv.addEventListener("scroll", handleViewportChange);
+
+    return () => {
+      vv.removeEventListener("resize", handleViewportChange);
+      vv.removeEventListener("scroll", handleViewportChange);
+    };
+  }, []);
 
   return (
     <label className="field-row">
@@ -77,15 +133,33 @@ function NoteField({
       <textarea
         ref={inputRef}
         value={value}
-        onFocus={(event) =>
-          onCursorChange(fieldId, event.currentTarget.selectionStart)
-        }
-        onSelect={(event) =>
-          onCursorChange(fieldId, event.currentTarget.selectionStart)
-        }
+        onFocus={(event) => {
+          const target = event.currentTarget;
+          onCursorChange(fieldId, target.selectionStart);
+          keepCursorInView(target, { alignMiddle: false });
+          // Re-check after mobile virtual keyboard animation completes (~350ms)
+          window.setTimeout(() => {
+            if (document.activeElement === target) {
+              keepCursorInView(target, { alignMiddle: false });
+            }
+          }, 350);
+        }}
+        onClick={(event) => {
+          onCursorChange(fieldId, event.currentTarget.selectionStart);
+          keepCursorInView(event.currentTarget, { immediate: true });
+        }}
+        onKeyUp={(event) => {
+          onCursorChange(fieldId, event.currentTarget.selectionStart);
+          keepCursorInView(event.currentTarget, { immediate: true });
+        }}
+        onSelect={(event) => {
+          onCursorChange(fieldId, event.currentTarget.selectionStart);
+        }}
         onChange={(event) => {
           onChange(fieldId, event.target.value);
           onCursorChange(fieldId, event.target.selectionStart);
+          resize();
+          keepCursorInView(event.currentTarget, { immediate: true });
         }}
         placeholder="Write here..."
         rows={1}
