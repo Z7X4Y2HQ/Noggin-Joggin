@@ -4,6 +4,7 @@ import "./App.css";
 const sections = [...new Set(articles.map((article) => article.section))];
 const themeStorageKey = "noggin-joggin-theme";
 const focusStorageKey = "noggin-joggin-current-focus";
+const roadmapPlanStorageKey = "noggin-joggin-roadmap-plan";
 const demoDeadline = new Date(2027, 9, 1);
 
 type FieldValues = Record<string, string>;
@@ -18,10 +19,13 @@ type RoadmapTask = { id: string; label: string };
 type RoadmapStage = {
   id: string;
   period: string;
+  startsOn: string;
+  endsOn: string;
   title: string;
   description: string;
   tasks: RoadmapTask[];
 };
+type RoadmapStageDraft = Pick<RoadmapStage, "id" | "title" | "tasks">;
 type CurriculumPhase = {
   id: string;
   title: string;
@@ -39,6 +43,8 @@ const roadmapStages: RoadmapStage[] = [
   {
     id: "learn",
     period: "OCT–DEC 2026",
+    startsOn: "2026-10-01",
+    endsOn: "2027-01-01",
     title: "Finish the essentials",
     description:
       "Aim for working familiarity, not mastery: follow this order and make small experiments. If a topic takes longer, carry it into the vertical slice instead of delaying the demo to finish a course.",
@@ -56,6 +62,8 @@ const roadmapStages: RoadmapStage[] = [
   {
     id: "vertical-slice",
     period: "JAN–MAR 2027",
+    startsOn: "2027-01-01",
+    endsOn: "2027-04-01",
     title: "Make a complete first slice",
     description:
       "Choose a contained story premise and prove the whole experience before making more content. This is the key go/no-go checkpoint.",
@@ -69,6 +77,8 @@ const roadmapStages: RoadmapStage[] = [
   {
     id: "demo-content",
     period: "APR–JUN 2027",
+    startsOn: "2027-04-01",
+    endsOn: "2027-07-01",
     title: "Build the 20–30 minute demo",
     description:
       "Expand the proven slice into one short, coherent narrative adventure. Prefer a few meaningful decisions over expensive branching paths.",
@@ -82,6 +92,8 @@ const roadmapStages: RoadmapStage[] = [
   {
     id: "presentation",
     period: "JUL–AUG 2027",
+    startsOn: "2027-07-01",
+    endsOn: "2027-09-01",
     title: "Polish the presentation",
     description:
       "Apply the camera, cutscene, and visual foundations from the essentials to the finished demo. Keep animation and facial work within the character and scene count you can finish.",
@@ -92,6 +104,8 @@ const roadmapStages: RoadmapStage[] = [
   {
     id: "release-prep",
     period: "SEP–OCT 2027",
+    startsOn: "2027-09-01",
+    endsOn: "2027-11-01",
     title: "Optimize, test, and ship a demo build",
     description:
       "Put interface and optimization polish here after the story is playable. Reserve the remaining time for fixes and packaging, not new systems. Confirm the official Next Fest dates separately.",
@@ -104,6 +118,12 @@ const roadmapStages: RoadmapStage[] = [
     ],
   },
 ];
+
+function loadSavedRoadmapStages(): RoadmapStage[] {
+  const saved = localStorage.getItem(roadmapPlanStorageKey);
+  if (!saved) return roadmapStages;
+  return JSON.parse(saved) as RoadmapStage[];
+}
 
 const optionalCurriculum: CurriculumPhase[] = [
   {
@@ -241,7 +261,7 @@ const roadmapResources = [
   },
   {
     title: "Aikodex",
-    description: "Real-time animated storytelling tutorials (you already have these downloaded).",
+    description: "Tools for real-time animated storytelling.",
     href: "https://www.aikodex.com/",
   },
 ];
@@ -389,6 +409,11 @@ function App() {
     () => localStorage.getItem(themeStorageKey) === "dark",
   );
   const [fieldValues, setFieldValues] = useState<FieldValues>({});
+  const [editableRoadmapStages, setEditableRoadmapStages] =
+    useState<RoadmapStage[]>(loadSavedRoadmapStages);
+  const [roadmapStageDraft, setRoadmapStageDraft] =
+    useState<RoadmapStageDraft | null>(null);
+  const [newRoadmapTaskLabel, setNewRoadmapTaskLabel] = useState("");
   const [focusItems, setFocusItems] = useState<FocusItem[]>(readSavedFocusItems);
   const [focusError, setFocusError] = useState("");
   const [editingFocusId, setEditingFocusId] = useState("");
@@ -401,6 +426,14 @@ function App() {
   const activeArticle =
     articles.find((article) => article.id === activeId) ?? articles[0];
   const isRoadmapPage = activeId === "demo-roadmap";
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const currentRoadmapStage =
+    editableRoadmapStages.find((stage) => {
+      const start = new Date(`${stage.startsOn}T00:00:00`);
+      const end = new Date(`${stage.endsOn}T00:00:00`);
+      return todayDate >= start && todayDate < end;
+    }) ?? editableRoadmapStages[editableRoadmapStages.length - 1];
   const activeFocusItems = focusItems.filter((item) => !item.completed);
   const completedFocusItems = focusItems.filter((item) => item.completed);
   const countdownDistance = Math.max(
@@ -513,6 +546,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem(focusStorageKey, JSON.stringify(focusItems));
   }, [focusItems]);
+  useEffect(() => {
+    localStorage.setItem(
+      roadmapPlanStorageKey,
+      JSON.stringify(editableRoadmapStages),
+    );
+  }, [editableRoadmapStages]);
   const addFocusItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -576,20 +615,27 @@ function App() {
       return [...activeItems, ...completedItems];
     });
   };
-  const focusEssentialTask = (task: RoadmapTask) => {
-    const existingId = `essential-${task.id}`;
-    const title = task.label.replace(/^(Now|Next) — /, "");
-    const url = task.id === "motion-matching" ? currentMotionMatchingSeries : "";
+  const addTaskToFocus = (
+    task: RoadmapTask,
+    sourceTaskId: string,
+    url = "",
+  ) => {
+    const existingId = `roadmap-${sourceTaskId}`;
     setFocusItems((items) => {
       const existing = items.find(
         (item) =>
-          item.sourceTaskId === task.id ||
+          item.sourceTaskId === sourceTaskId ||
           item.id === existingId ||
           item.id === task.id,
       );
       const nextItem: FocusItem = existing
-        ? { ...existing, sourceTaskId: task.id, completed: false }
-        : { id: existingId, sourceTaskId: task.id, title, url };
+        ? { ...existing, sourceTaskId, completed: false }
+        : {
+            id: existingId,
+            sourceTaskId,
+            title: task.label.replace(/^(Now|Next) — /, ""),
+            url,
+          };
       const activeItems = items.filter(
         (item) => !item.completed && item.id !== nextItem.id,
       );
@@ -598,6 +644,40 @@ function App() {
       );
       return [...activeItems, nextItem, ...completedItems];
     });
+  };
+  const startEditingRoadmapStage = (stage: RoadmapStage) => {
+    setRoadmapStageDraft({
+      id: stage.id,
+      title: stage.title,
+      tasks: stage.tasks.map((task) => ({ ...task })),
+    });
+    setNewRoadmapTaskLabel("");
+  };
+  const saveRoadmapStage = () => {
+    if (!roadmapStageDraft) return;
+    setEditableRoadmapStages((stages) =>
+      stages.map((stage) =>
+        stage.id === roadmapStageDraft.id
+          ? { ...stage, title: roadmapStageDraft.title, tasks: roadmapStageDraft.tasks }
+          : stage,
+      ),
+    );
+    setRoadmapStageDraft(null);
+    setNewRoadmapTaskLabel("");
+  };
+  const addRoadmapStageTask = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const label = newRoadmapTaskLabel.trim();
+    if (!roadmapStageDraft || !label) return;
+    setRoadmapStageDraft((draft) =>
+      draft
+        ? {
+            ...draft,
+            tasks: [...draft.tasks, { id: `${draft.id}-${Date.now()}`, label }],
+          }
+        : draft,
+    );
+    setNewRoadmapTaskLabel("");
   };
   const updateField = (fieldId: string, value: string) => {
     setFieldValues((currentValues) => ({ ...currentValues, [fieldId]: value }));
@@ -1106,11 +1186,11 @@ function App() {
                       <button type="submit">Add item <b>+</b></button>
                       {focusError && <small className="focus-error" role="alert">{focusError}</small>}
                     </form>
-                    <section className="focus-completed-section" aria-labelledby="completed-focus-heading">
-                      <div className="focus-completed-heading">
+                    <details className="focus-completed-section" aria-labelledby="completed-focus-heading" open>
+                      <summary className="focus-completed-heading">
                         <h3 id="completed-focus-heading">Completed</h3>
                         <small>{completedFocusItems.length} {completedFocusItems.length === 1 ? "item" : "items"}</small>
-                      </div>
+                      </summary>
                       {completedFocusItems.length ? (
                         <div className="focus-item-list">
                           {completedFocusItems.map((item) => (
@@ -1173,42 +1253,131 @@ function App() {
                       ) : (
                         <p className="focus-empty">Completed focus items will appear here.</p>
                       )}
-                    </section>
+                    </details>
                   </section>
                   <div className="roadmap-stages">
-                    {roadmapStages.map((stage, index) => {
+                    {editableRoadmapStages.map((stage, index) => {
+                      const isEditingStage = roadmapStageDraft?.id === stage.id;
                       return (
                         <section className="roadmap-stage" key={stage.id}>
                           <div className="stage-heading">
                             <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
                             <div>
                               <span className="roadmap-overline">{stage.period}</span>
-                              <h2>{stage.title}</h2>
+                              {isEditingStage ? (
+                                <label className="stage-title-editor">
+                                  <span>SECTION TITLE</span>
+                                  <input
+                                    value={roadmapStageDraft.title}
+                                    onChange={(event) =>
+                                      setRoadmapStageDraft((draft) =>
+                                        draft
+                                          ? { ...draft, title: event.target.value }
+                                          : draft,
+                                      )
+                                    }
+                                    maxLength={100}
+                                  />
+                                </label>
+                              ) : (
+                                <h2>{stage.title}</h2>
+                              )}
                               <p>{stage.description}</p>
                             </div>
+                            {isEditingStage ? (
+                              <div className="stage-editor-actions">
+                                <button type="button" onClick={saveRoadmapStage}>Save</button>
+                                <button type="button" onClick={() => setRoadmapStageDraft(null)}>Cancel</button>
+                              </div>
+                            ) : (
+                              <button
+                                className="stage-edit-button"
+                                type="button"
+                                aria-label={`Edit ${stage.title}`}
+                                onClick={() => startEditingRoadmapStage(stage)}
+                              >
+                                Edit
+                              </button>
+                            )}
                           </div>
                           <div className="roadmap-task-list">
-                            {stage.tasks.map((task) => {
-                              const taskRow = (
-                                <div className="roadmap-task">{task.label}</div>
-                              );
-                              return stage.id === "learn" ? (
-                                <div className="essential-task" key={task.id}>
-                                  {taskRow}
-                                  <button
-                                    className="focus-add-task"
-                                    type="button"
-                                    aria-label={`Move ${task.label.replace(/^(Now|Next) — /, "")} to Current Focus`}
-                                    onClick={() => focusEssentialTask(task)}
-                                  >
-                                    + Focus
-                                  </button>
-                                </div>
-                              ) : (
-                                <div key={task.id}>{taskRow}</div>
-                              );
-                            })}
+                            {isEditingStage
+                              ? roadmapStageDraft.tasks.map((task) => (
+                                  <div className="stage-task-editor" key={task.id}>
+                                    <input
+                                      value={task.label}
+                                      aria-label="Roadmap item"
+                                      maxLength={180}
+                                      onChange={(event) =>
+                                        setRoadmapStageDraft((draft) =>
+                                          draft
+                                            ? {
+                                                ...draft,
+                                                tasks: draft.tasks.map((draftTask) =>
+                                                  draftTask.id === task.id
+                                                    ? { ...draftTask, label: event.target.value }
+                                                    : draftTask,
+                                                ),
+                                              }
+                                            : draft,
+                                        )
+                                      }
+                                    />
+                                    <button
+                                      type="button"
+                                      aria-label={`Remove ${task.label}`}
+                                      onClick={() =>
+                                        setRoadmapStageDraft((draft) =>
+                                          draft
+                                            ? {
+                                                ...draft,
+                                                tasks: draft.tasks.filter(
+                                                  (draftTask) => draftTask.id !== task.id,
+                                                ),
+                                              }
+                                            : draft,
+                                        )
+                                      }
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))
+                              : stage.tasks.map((task) => (
+                                  <div className="essential-task" key={task.id}>
+                                    <div className="roadmap-task">{task.label}</div>
+                                    {stage.id === currentRoadmapStage?.id && (
+                                      <button
+                                        className="focus-add-task"
+                                        type="button"
+                                        aria-label={`Move ${task.label.replace(/^(Now|Next) — /, "")} to Current Focus`}
+                                        onClick={() =>
+                                          addTaskToFocus(
+                                            task,
+                                            `stage:${stage.id}:${task.id}`,
+                                          )
+                                        }
+                                      >
+                                        + Focus
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
                           </div>
+                          {isEditingStage && (
+                            <form className="stage-add-task-form" onSubmit={addRoadmapStageTask}>
+                              <input
+                                value={newRoadmapTaskLabel}
+                                onChange={(event) => setNewRoadmapTaskLabel(event.target.value)}
+                                placeholder="Add a roadmap item"
+                                aria-label="New roadmap item"
+                                maxLength={180}
+                              />
+                              <button type="submit" disabled={!newRoadmapTaskLabel.trim()}>
+                                Add item +
+                              </button>
+                            </form>
+                          )}
                         </section>
                       );
                     })}
@@ -1227,7 +1396,7 @@ function App() {
                       </div>
                       <small>Useful references · not the current priority</small>
                     </div>
-                    <p className="download-note">Real-time Animated Storytelling tutorials — already downloaded; schedule these after the current motion-matching focus.</p>
+                    <p className="download-note"><strong>Aikodex is a tool/resource, not the tutorials you downloaded.</strong> Your Real-time Animated Storytelling tutorials are a separate downloaded resource; work through them when they fit your schedule.</p>
                     <div className="resource-list">
                       {roadmapResources.map((resource) => (
                         <a href={resource.href} target="_blank" rel="noreferrer" key={resource.title}>
@@ -1257,7 +1426,22 @@ function App() {
                             </summary>
                             <div className="roadmap-task-list">
                               {phase.topics.map((topic) => (
-                                <div className="roadmap-task" key={topic.id}>{topic.label}</div>
+                                <div className="essential-task" key={topic.id}>
+                                  <div className="roadmap-task">{topic.label}</div>
+                                  <button
+                                    className="focus-add-task"
+                                    type="button"
+                                    aria-label={`Move ${topic.label} to Current Focus`}
+                                    onClick={() =>
+                                      addTaskToFocus(
+                                        topic,
+                                        `curriculum:${phase.id}:${topic.id}`,
+                                      )
+                                    }
+                                  >
+                                    + Focus
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </details>

@@ -47,6 +47,81 @@
     17px Georgia,
     serif;
 }
+.stage-edit-button,
+.stage-editor-actions button,
+.stage-task-editor button,
+.stage-add-task-form button {
+  padding: 6px 8px;
+  border: 1px solid #cbc8be;
+  background: transparent;
+  color: #69736e;
+  cursor: pointer;
+  font:
+    9px Consolas,
+    monospace;
+  text-transform: uppercase;
+}
+.stage-edit-button:hover,
+.stage-editor-actions button:hover,
+.stage-task-editor button:hover,
+.stage-add-task-form button:hover:not(:disabled) {
+  border-color: var(--orange);
+  color: #a75030;
+}
+.stage-editor-actions {
+  display: flex;
+  gap: 6px;
+}
+.stage-title-editor {
+  display: block;
+  margin-top: 8px;
+}
+.stage-title-editor > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #818983;
+  font:
+    8px Consolas,
+    monospace;
+  letter-spacing: 0.8px;
+}
+.stage-title-editor input,
+.stage-task-editor input,
+.stage-add-task-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #cbc8be;
+  border-radius: 0;
+  outline: none;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--ink);
+  font:
+    13px Georgia,
+    serif;
+}
+.stage-title-editor input:focus,
+.stage-task-editor input:focus,
+.stage-add-task-form input:focus {
+  border-color: var(--orange);
+}
+.stage-task-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(217, 214, 206, 0.72);
+}
+.stage-add-task-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  margin: 12px 0 0 48px;
+}
+.stage-add-task-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .login-brand strong {
   color: var(--orange);
   font-weight: 400;
@@ -1185,6 +1260,24 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.focus-completed-heading::-webkit-details-marker {
+  display: none;
+}
+.focus-completed-heading::before {
+  content: "+";
+  color: var(--orange);
+  font:
+    15px Consolas,
+    monospace;
+}
+.focus-completed-section[open] .focus-completed-heading::before {
+  content: "−";
+}
+.focus-completed-heading h3 {
+  flex: 1;
 }
 .focus-completed-heading h3 {
   margin: 0;
@@ -1221,6 +1314,23 @@
 }
 .theme-dark .focus-completed-heading h3 {
   color: #bdc6bf;
+}
+.theme-dark .stage-edit-button,
+.theme-dark .stage-editor-actions button,
+.theme-dark .stage-task-editor button,
+.theme-dark .stage-add-task-form button {
+  border-color: #596563;
+  color: #c2cbc4;
+}
+.theme-dark .stage-title-editor > span {
+  color: #aab4ae;
+}
+.theme-dark .stage-title-editor input,
+.theme-dark .stage-task-editor input,
+.theme-dark .stage-add-task-form input {
+  border-color: #596563;
+  background: rgba(0, 0, 0, 0.12);
+  color: #f3f0e9;
 }
 .focus-form {
   display: grid;
@@ -1326,7 +1436,7 @@
 }
 .stage-heading {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
 }
@@ -1731,6 +1841,15 @@
   .stage-heading {
     grid-template-columns: 27px minmax(0, 1fr);
     gap: 8px;
+  }
+  .stage-edit-button,
+  .stage-editor-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .stage-add-task-form {
+    grid-template-columns: 1fr;
+    margin-left: 35px;
   }
   .roadmap-task-list {
     margin-left: 35px;
