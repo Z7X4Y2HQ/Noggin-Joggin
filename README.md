@@ -2,6 +2,8 @@
 
 An interactive React documentation index for a narrative adventure game. The current interface includes section navigation, searchable field notes, responsive mobile navigation, and previous/next article controls.
 
+The **Demo countdown & roadmap** page tracks a personal October 2027 demo target, a staged plan for a 20–30 minute narrative-adventure demo, and a shelf of learning references. Its editable Current Focus queue is the only roadmap section with completion checkboxes; it supports optional resource links, lets you edit and reorder entries by dragging or using arrow controls, and moves checked items into a separate Completed section. Essentials can be promoted directly into the focus queue. The full nine-phase Unity learning curriculum is included below the demo-first plan as an optional, expandable reference. Focus items are saved in the current browser; field notes continue to use the notes API described below.
+
 ## Run locally
 
 ```bash
