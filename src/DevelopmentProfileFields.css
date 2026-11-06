@@ -1,0 +1,23 @@
+.development-profile-fields { display: grid; gap: 12px; }
+.game-dimension-field { min-width: 0; margin: 0; padding: 0; border: 0; }
+.game-dimension-field legend { margin-bottom: 9px; padding: 0; font: 600 9px var(--font-label); letter-spacing: .6px; }
+.game-dimension-options { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; }
+.game-dimension-options button,.game-system-options button { min-height: 36px; padding: 9px 7px; border: 1px solid #a7ada3; background: transparent; color: inherit; font: 500 11px/1.5 var(--font-body); cursor: pointer; }
+.game-dimension-options button[aria-pressed="true"],.game-system-options button[aria-pressed="true"] { border-color: var(--orange); background: rgb(213 107 63 / 12%); color: var(--orange); }
+.game-system-choices { border: 1px solid var(--line); }
+.game-system-choices summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; list-style: none; cursor: pointer; font: 600 9px/1.6 var(--font-label); letter-spacing: .6px; }
+.game-system-choices summary::-webkit-details-marker { display: none; }
+.game-system-choices summary small { margin-left: 8px; color: var(--muted); font: 10px var(--font-body); letter-spacing: normal; }
+.game-system-choices summary svg { width: 17px; height: 17px; transition: transform 140ms ease; }
+.game-system-choices[open] summary svg { transform: rotate(180deg); }
+.game-system-choices p,.game-profile-help { margin: 0; color: var(--muted); font: 11px/1.7 var(--font-body); }
+.game-system-choices p { padding: 0 12px 12px; }
+.game-system-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; padding: 0 12px 12px; }
+.game-system-options button { text-align: left; }
+.theme-dark .game-system-choices { border-color: #52615c; }
+.theme-dark .game-system-choices p,.theme-dark .game-profile-help,.theme-dark .game-system-choices summary small { color: #b5bfb5; }
+.theme-dark .game-dimension-options button,.theme-dark .game-system-options button { border-color: #6b7770; }
+.theme-dark .game-dimension-options button[aria-pressed="true"],.theme-dark .game-system-options button[aria-pressed="true"] { border-color: var(--orange); }
+.game-system-choices summary:focus-visible,.game-dimension-options button:focus-visible,.game-system-options button:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+@media (max-width: 380px) { .game-dimension-options { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (prefers-reduced-motion: reduce) { .game-system-choices summary svg { transition: none; } }

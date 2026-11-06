@@ -1,43 +1,39 @@
 # Noggin Joggin Field Guide
 
-An interactive React documentation index for a narrative adventure game. The current interface includes section navigation, searchable field notes, responsive mobile navigation, and previous/next article controls.
+A private documentation and planning workspace for multiple games. Each game has separate notes, roadmap headings and tasks, focus items, and an optional deadline.
 
-The **Demo countdown & roadmap** page tracks a personal October 2027 demo target, a staged plan for a 20–30 minute narrative-adventure demo, and a shelf of learning references. Roadmap stage titles and tasks are editable and saved in the current browser. Tasks in the current time period and every optional curriculum topic can be added to the editable Current Focus queue. The queue supports optional resource links, reordering by dragging or arrow controls, and moves checked items into a collapsible Completed section. Aikodex is listed as a real-time animated storytelling tool; the user's downloaded tutorials are separate. The full nine-phase Unity learning curriculum is included below the demo-first plan as an optional, expandable reference. Focus items are saved in the current browser; field notes continue to use the notes API described below.
+## Games and documentation
+
+Sign in with the backend owner credentials. Use the current-game selector in the sidebar to switch games, **New game** to create another, and **Game settings** to rename a game or change its deadline and timezone.
+
+Every game uses the complete original documentation template: 186 pages across 62 sections, with all existing topics, index labels, and editable prompts preserved. New games start with blank notes, an empty delivery roadmap, and the reference Unity curriculum. The original documentation is migrated into **My first game**, which you can rename.
+
+On the roadmap page, **Add heading** opens a styled modal for the title, optional description/dates, and tasks. Cancel discards the draft; Add heading commits it. Headings and tasks have their own database rows with parent references. Roadmap tasks appear as plain items and can be added to Current Focus. Removing a heading hides it from the roadmap while retaining existing focus items.
+
+The countdown reads the current game's saved deadline. The date, time, and IANA timezone are explicit in Game settings. Labels update together. Stages extending beyond the deadline show a planning warning.
+
+## Saving and backups
+
+Notes, delivery roadmaps, and focus queues save independently to relational tables in the shared backend's story_dump database. Saves are serialized, switching games waits for pending changes, and versions detect stale writes from other browsers. Save or cancel an open heading/focus editor before switching games.
+
+**Export game JSON** exports the current game's notes, guide definitions, roadmap, curriculum, focus queue, and settings. **Import notes JSON** accepts the existing notes-only format and validates the keys against the guide. Import is limited to notes; it does not replace game settings or roadmap data. Database backups remain the full recovery mechanism.
+
+The original story_documents JSON row is retained as a read-only migration snapshot. Old clients must reload; the retired JSON write endpoint returns HTTP 410. Existing browser storage is not deleted. Theme stays local and the session token remains in session storage.
 
 ## Run locally
 
-```bash
-npm install
-npm run dev
-```
+Start all three projects with start-apps.cmd in Desktop/Server/server, or start Docker Compose in that folder and run npm run dev here. Vite proxies /api to http://localhost:3002 by default; the combined launcher uses http://localhost:5174 for this app.
 
-Create a production build with `npm run build` and run the linter with `npm run lint`.
+Use npm run build and npm run lint to verify changes. The Node production server can serve the built app and proxy API requests with PORT=3000 and API_URL=http://127.0.0.1:3002. Use HTTPS and exact CORS origins when deploying remotely.
 
-## Oracle Cloud hosting
+## GitHub Pages
 
-The production app includes a small Node server so the React build and file-backed notes API run together. On the Oracle Cloud instance, install Node.js 20+, clone this repository, then run:
+The master branch deploys automatically through the GitHub Pages Actions workflow. In the repository, open Settings > Pages and set the publishing source to GitHub Actions.
 
-```bash
-npm ci
-npm run build
-PORT=3000 npm start
-```
+Before the first deployment, add a repository Actions variable named VITE_API_URL with the public HTTPS base URL of the shared API (for example, https://api.example.com, without a trailing slash). The workflow requires this value and builds the app with the GitHub Pages project path.
 
-Open TCP port `3000` in the Oracle Cloud VCN security list and the instance firewall, or place Nginx/Caddy in front of the app on ports 80/443. For a persistent process, use a systemd service or PM2. Notes continue to save to `data/notes.json` on the server. That runtime file is intentionally ignored by Git, so future pulls cannot overwrite or conflict with server notes.
+The API and PostgreSQL database must remain hosted separately; GitHub Pages serves only the frontend and cannot run server.mjs. In the backend environment, include https://z7x4y2hq.github.io in CORS_ORIGINS, preserving any existing origins, then restart the API. The GitHub Pages project URL is https://z7x4y2hq.github.io/Noggin-Joggin/.
 
-After the first setup, update and restart the Oracle deployment with:
+## Source template
 
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
-
-The script pulls the latest commit, installs dependencies, builds the app, replaces the process on port `3000`, and writes server output to `noggin-joggin.log`.
-
-## Notes storage
-
-Run the app with `npm run dev` to edit the guide. Notes are automatically saved to `data/notes.json` in the project folder through the local Vite server. The tracked `data/notes.example.json` file documents the expected shape, while the runtime notes file stays local to each deployment. The Export JSON and Import JSON controls provide an additional backup workflow.
-
-## Content
-
-The DOCX headings and notes are imported into `src/content.ts`. The source document remains in the project root as `Narrative_Adventure_Game_Requirements_Document.docx`; regenerate `src/content.ts` if the source document changes.
+The original reference document and src/content.ts remain in this project. The backend's src/story-template.json is the preserved seed used to initialize the database template. The running app reads guide definitions from the database. Do not regenerate stable field IDs when updating a template; use an explicit migration so existing notes remain attached to their prompts.

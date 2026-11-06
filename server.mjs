@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const distDirectory = path.join(root, 'dist')
-const notesFile = path.join(root, 'data', 'notes.json')
 const port = Number(process.env.PORT ?? 3000)
+const apiUrl = process.env.API_URL ?? 'http://127.0.0.1:3002'
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -16,6 +16,7 @@ const mimeTypes = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 }
 
 function sendJson(response, statusCode, body) {
@@ -23,12 +24,76 @@ function sendJson(response, statusCode, body) {
   response.end(JSON.stringify(body))
 }
 
+function readRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    let tooLarge = false
+    request.on('data', (chunk) => {
+      size += chunk.length
+      if (size > 2 * 1024 * 1024) {
+        tooLarge = true
+        chunks.length = 0
+        return
+      }
+      if (!tooLarge) chunks.push(chunk)
+    })
+    request.on('end', () => resolve(tooLarge ? null : Buffer.concat(chunks)))
+    request.on('error', reject)
+  })
+}
+
+async function proxyApi(request, response) {
+  try {
+    const body = ['GET', 'HEAD'].includes(request.method)
+      ? undefined
+      : await readRequestBody(request)
+    if (body === null) {
+      sendJson(response, 413, { error: 'Request body is too large.' })
+      return
+    }
+    const upstream = await fetch(new URL(request.url, apiUrl), {
+      method: request.method,
+      headers: {
+        ...(request.headers.authorization ? { Authorization: request.headers.authorization } : {}),
+        ...(request.headers['content-type'] ? { 'Content-Type': request.headers['content-type'] } : {}),
+      },
+      body,
+    })
+    response.writeHead(upstream.status, {
+      'Content-Type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    response.end(Buffer.from(await upstream.arrayBuffer()))
+  } catch (error) {
+    console.error('Backend proxy request failed:', error)
+    sendJson(response, 502, { error: 'The backend API is unavailable.' })
+  }
+}
+
 function serveStatic(request, response) {
-  const requestedPath = decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname)
+  let requestedPath
+  try {
+    requestedPath = decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname)
+  } catch {
+    sendJson(response, 400, { error: 'Invalid request path.' })
+    return
+  }
   const relativePath = requestedPath === '/' ? '/index.html' : requestedPath
   const filePath = path.resolve(distDirectory, `.${relativePath}`)
-  if (!filePath.startsWith(distDirectory) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+  const relativeFilePath = path.relative(distDirectory, filePath)
+  if (
+    relativeFilePath.startsWith(`..${path.sep}`) ||
+    relativeFilePath === '..' ||
+    path.isAbsolute(relativeFilePath) ||
+    !fs.existsSync(filePath) ||
+    !fs.statSync(filePath).isFile()
+  ) {
     const fallback = path.join(distDirectory, 'index.html')
+    if (!fs.existsSync(fallback)) {
+      sendJson(response, 503, { error: 'The production build is missing. Run npm run build.' })
+      return
+    }
     response.writeHead(200, { 'Content-Type': mimeTypes['.html'] })
     response.end(fs.readFileSync(fallback))
     return
@@ -39,36 +104,17 @@ function serveStatic(request, response) {
 }
 
 const server = http.createServer((request, response) => {
-  if (request.url === '/api/notes' && request.method === 'GET') {
-    if (!fs.existsSync(notesFile)) fs.writeFileSync(notesFile, JSON.stringify({ version: 1, fields: {} }, null, 2))
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    response.end(fs.readFileSync(notesFile, 'utf8'))
+  if (request.url.startsWith('/api/')) {
+    void proxyApi(request, response)
     return
   }
-
-  if (request.url === '/api/notes' && request.method === 'PUT') {
-    const chunks = []
-    request.on('data', (chunk) => chunks.push(chunk))
-    request.on('end', () => {
-      try {
-        const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-        fs.mkdirSync(path.dirname(notesFile), { recursive: true })
-        fs.writeFileSync(notesFile, `${JSON.stringify(payload, null, 2)}\n`)
-        sendJson(response, 200, { ok: true })
-      } catch {
-        sendJson(response, 400, { ok: false, error: 'Invalid notes JSON' })
-      }
-    })
-    return
-  }
-
-  if (request.method !== 'GET') {
-    sendJson(response, 405, { ok: false, error: 'Method not allowed' })
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    sendJson(response, 405, { error: 'Method not allowed.' })
     return
   }
   serveStatic(request, response)
 })
 
 server.listen(port, '0.0.0.0', () => {
-  console.log(`Noggin Joggin listening on port ${port}`)
+  console.log(`Noggin Joggin listening on port ${port}; API proxy: ${apiUrl}`)
 })

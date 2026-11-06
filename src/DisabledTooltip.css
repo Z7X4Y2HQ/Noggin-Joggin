@@ -1,0 +1,9 @@
+.disabled-control-description { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; border: 0 !important; overflow: hidden !important; clip-path: inset(50%) !important; white-space: nowrap !important; pointer-events: none; }
+button[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+button[aria-disabled="true"]:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.disabled-action-tooltip { position: fixed; z-index: 10000; max-width: min(300px,calc(100vw - 24px)); padding: 10px 12px; border: 1px solid #c8c9bf; border-left: 2px solid #d56b3f; border-radius: 3px; background: #f3f0e9; color: #20272b; box-shadow: 0 6px 24px rgb(14 24 24 / 18%); font: 500 12px/1.6 var(--font-body); letter-spacing: normal; overflow-wrap: anywhere; text-transform: none; }
+.disabled-action-tooltip.is-dark { border-color: #63736b; border-left-color: #e28b60; background: #293739; color: #f3f0e9; }
+.essential-task.is-in-focus { padding-left: 12px; padding-right: 12px; border-left: 2px solid var(--orange); background: rgb(213 107 63 / 7%); }
+.essential-task.is-in-focus .roadmap-task { color: var(--ink); }
+.focus-source-status { display: block; margin-top: 5px; color: var(--orange); font: 600 9px/1.5 var(--font-label); letter-spacing: .5px; }
+.essential-task.is-in-focus .focus-add-task { color: var(--orange); opacity: .8; }

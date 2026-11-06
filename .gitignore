@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+.env*
+!.env.example
 
 # Runtime notes stay on each server and are never merged by Git.
 data/notes.json

@@ -1,0 +1,42 @@
+
+/* Keep display headings editorial; use Manrope for reading and controls. */
+.app-shell h1,
+.app-shell h2,
+.login-screen h1 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  letter-spacing: -0.025em;
+}
+
+.intro-block h1,
+.login-panel h1 {
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+}
+
+.brand-mark,
+.login-brand {
+  font-family: var(--font-heading);
+}
+
+.article-body blockquote {
+  font-family: var(--font-heading);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.roadmap-task,
+.stage-heading p {
+  line-height: 1.65;
+}
+
+.field-row textarea {
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.countdown-panel strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}

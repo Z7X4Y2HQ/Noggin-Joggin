@@ -1,23 +1,45 @@
+import FocusTaskRow from "./FocusTaskRow";
+import { addSourceTaskToFocus, isTaskInFocus, type FocusEntry } from "./focus-tasks";
+import { ActionButton as Button } from "./ActionButton";
+import type { TaskCategory } from "./TaskSuggestions";
+import { headingHasChanges, headingSnapshot, headingValidationError, persistHeadingDraft } from "./heading-draft";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { articles } from "./content";
+import type { Article } from "./content";
+import GameControls, { GameDialog, type Game, type GameValues } from "./GameControls";
+import { apiRequest } from "./api";
+import HeadingDialog from "./HeadingDialog";
+import { createSaveQueue } from "./save-queue";
 import "./App.css";
-const sections = [...new Set(articles.map((article) => article.section))];
+import "./Typography.css";
+import type {PlanProfile,PlanSummary} from "./plan-types";
+import type {GameDimension} from "./game-development";
+import DocumentationTools from "./DocumentationTools";
+import "./GamePlan.css";
 const themeStorageKey = "noggin-joggin-theme";
-const focusStorageKey = "noggin-joggin-current-focus";
-const roadmapPlanStorageKey = "noggin-joggin-roadmap-plan";
-const demoDeadline = new Date(2027, 9, 1);
+const authTokenStorageKey = "noggin-joggin-session-v1";
 
+type GameArticle = Article & { fieldIds: string[]; fieldKeys: string[] };
+// Keep the guide's stable titles and IDs; remove outline numbering only in sidebar labels.
+function sidebarTitle(title: string) { return title.replace(/^\d+(?:\.\d+)*\.?\s+/, ""); }
 type FieldValues = Record<string, string>;
-type FocusItem = {
-  id: string;
-  title: string;
-  url: string;
-  completed?: boolean;
-  sourceTaskId?: string;
+const emptyArticle: GameArticle = { id: "doc-1", section: "", label: "001", title: "Documentation", kicker: "", summary: "", body: [], tags: [], fieldIds: [], fieldKeys: [] };
+function shiftDate(value: string, days: number) { return value ? new Date(Date.parse(value + "T00:00:00Z") + days * 86400000).toISOString().slice(0, 10) : ""; }
+function stagePeriod(stage: RoadmapStage) {
+  if (!stage.startsOn || !stage.endsOn) return "UNSCHEDULED";
+  const start = new Date(stage.startsOn + "T00:00:00Z"), end = new Date(shiftDate(stage.endsOn, -1) + "T00:00:00Z");
+  const month = (value: Date) => value.toLocaleDateString("en", { month: "short", timeZone: "UTC" }).toUpperCase();
+  return start.getUTCFullYear() === end.getUTCFullYear() ? `${month(start)}–${month(end)} ${end.getUTCFullYear()}` : `${month(start)} ${start.getUTCFullYear()}–${month(end)} ${end.getUTCFullYear()}`;
+}
+type StoryData = {
+  game: Game; articles: GameArticle[]; fields: FieldValues; noteVersions: Record<string, number>;
+  roadmapStages: RoadmapStage[]; curriculum: CurriculumPhase[]; focusItems: FocusItem[];
+  resources: { title: string; description: string; href: string }[]; taskCatalog: TaskCategory[]; roadmapVersion: number; archivedArticles:GameArticle[];curriculumTitle:string;planSummary:PlanSummary|null;
 };
-type RoadmapTask = { id: string; label: string };
+type FocusItem = FocusEntry;
+type RoadmapTask = { id: string; label: string; completed?: boolean };
 type RoadmapStage = {
   id: string;
+  taskCategoryId?: string | null;
   period: string;
   startsOn: string;
   endsOn: string;
@@ -25,278 +47,32 @@ type RoadmapStage = {
   description: string;
   tasks: RoadmapTask[];
 };
-type RoadmapStageDraft = Pick<RoadmapStage, "id" | "title" | "tasks">;
+type RoadmapStageDraft = RoadmapStage;
+type HeadingIntent = { kind: "close" } | { kind: "new" } | { kind: "edit"; id: string };
 type CurriculumPhase = {
   id: string;
   title: string;
+  description?: string;
+  gameSpecific?: boolean;
   topics: RoadmapTask[];
 };
+type CurriculumPart = { id: string; title: string; description: string; phases: CurriculumPhase[] };
+function groupEngineCurriculum(phases: CurriculumPhase[]): CurriculumPart[] {
+  const enginePhases = phases.filter((phase) => !phase.gameSpecific);
+  if (enginePhases.length === 9) return [
+    { id: "foundations", title: "Build the foundations", description: "Core systems, characters and world building.", phases: enginePhases.slice(0, 3) },
+    { id: "experience", title: "Craft the experience", description: "Narrative, cinematics and presentation.", phases: enginePhases.slice(3, 6) },
+    { id: "production", title: "Strengthen and ship", description: "Performance, advanced tools and production practice.", phases: enginePhases.slice(6, 9) },
+  ];
+  return enginePhases.length ? [{ id: "foundations", title: "Engine foundations", description: "Explore the core concepts and workflows at your own pace.", phases: enginePhases }] : [];
+}
 type SearchResult = {
-  article: (typeof articles)[number];
+  article: GameArticle;
   fieldId: string;
   fieldLabel: string;
   excerpt: string;
   isNote: boolean;
 };
-
-const roadmapStages: RoadmapStage[] = [
-  {
-    id: "learn",
-    period: "OCT–DEC 2026",
-    startsOn: "2026-10-01",
-    endsOn: "2027-01-01",
-    title: "Finish the essentials",
-    description:
-      "Aim for working familiarity, not mastery: follow this order and make small experiments. If a topic takes longer, carry it into the vertical slice instead of delaying the demo to finish a course.",
-    tasks: [
-      { id: "controller", label: "Build your own character controller using what you learned about movement" },
-      { id: "character", label: "Create one usable player character and connect its movement/animation" },
-      { id: "scene-management", label: "Learn the scene/loading flow needed to move through the demo" },
-      { id: "environment", label: "Build one small environment for the vertical slice" },
-      { id: "film-color-theory", label: "Learn cinematography basics, film language, and color theory" },
-      { id: "cinemachine", label: "Learn Cinemachine for framing, camera moves, and transitions" },
-      { id: "timeline", label: "Learn Timeline and make one small story cutscene" },
-      { id: "visual-pass", label: "Choose a realism/stylization target; practice lighting and materials" },
-    ],
-  },
-  {
-    id: "vertical-slice",
-    period: "JAN–MAR 2027",
-    startsOn: "2027-01-01",
-    endsOn: "2027-04-01",
-    title: "Make a complete first slice",
-    description:
-      "Choose a contained story premise and prove the whole experience before making more content. This is the key go/no-go checkpoint.",
-    tasks: [
-      { id: "story-scope", label: "Set the story scope: one protagonist, a few characters, one compact setting" },
-      { id: "narrative-loop", label: "Build dialogue, choices, and a small number of consequences" },
-      { id: "vertical-slice", label: "Finish a 5–8 minute playable beginning-to-end slice" },
-      { id: "playtest-slice", label: "Playtest it and cut features that do not support the story" },
-    ],
-  },
-  {
-    id: "demo-content",
-    period: "APR–JUN 2027",
-    startsOn: "2027-04-01",
-    endsOn: "2027-07-01",
-    title: "Build the 20–30 minute demo",
-    description:
-      "Expand the proven slice into one short, coherent narrative adventure. Prefer a few meaningful decisions over expensive branching paths.",
-    tasks: [
-      { id: "story-complete", label: "Write and lock the demo's beginning, middle, and ending" },
-      { id: "content-complete", label: "Build the complete 20–30 minute playable route" },
-      { id: "save-load", label: "Add only the save/load behavior the demo actually needs" },
-      { id: "content-playtest", label: "Playtest for pacing, clarity, and a reliable start-to-finish run" },
-    ],
-  },
-  {
-    id: "presentation",
-    period: "JUL–AUG 2027",
-    startsOn: "2027-07-01",
-    endsOn: "2027-09-01",
-    title: "Polish the presentation",
-    description:
-      "Apply the camera, cutscene, and visual foundations from the essentials to the finished demo. Keep animation and facial work within the character and scene count you can finish.",
-    tasks: [
-      { id: "audio-subtitles", label: "Add essential audio, readable subtitles, and basic accessibility options" },
-    ],
-  },
-  {
-    id: "release-prep",
-    period: "SEP–OCT 2027",
-    startsOn: "2027-09-01",
-    endsOn: "2027-11-01",
-    title: "Optimize, test, and ship a demo build",
-    description:
-      "Put interface and optimization polish here after the story is playable. Reserve the remaining time for fixes and packaging, not new systems. Confirm the official Next Fest dates separately.",
-    tasks: [
-      { id: "ui-basics", label: "Finish the demo UI: menus, dialogue, subtitles, and essential settings" },
-      { id: "performance", label: "Profile and fix the biggest performance or loading problems" },
-      { id: "qa", label: "Test a clean start-to-finish build on a target PC" },
-      { id: "bugfix", label: "Fix blockers and leave time for a final regression pass" },
-      { id: "build", label: "Create and verify the demo build and store materials" },
-    ],
-  },
-];
-
-function loadSavedRoadmapStages(): RoadmapStage[] {
-  const saved = localStorage.getItem(roadmapPlanStorageKey);
-  if (!saved) return roadmapStages;
-  return JSON.parse(saved) as RoadmapStage[];
-}
-
-const optionalCurriculum: CurriculumPhase[] = [
-  {
-    id: "core-systems",
-    title: "Phase 1 — Core game systems",
-    topics: [
-      { id: "architecture", label: "1.1 Game architecture" },
-      { id: "scriptable-objects", label: "1.2 ScriptableObjects & data-driven design" },
-      { id: "events", label: "1.3 Events" },
-      { id: "state-machines", label: "1.4 State machines" },
-      { id: "interaction-system", label: "1.5 Interaction system" },
-      { id: "scene-management", label: "1.6 Scene management" },
-      { id: "save-load", label: "1.7 Save/load" },
-      { id: "input-system", label: "1.8 Input System" },
-    ],
-  },
-  {
-    id: "characters",
-    title: "Phase 2 — Characters",
-    topics: [
-      { id: "character-creation", label: "2.1 Character creation" },
-      { id: "animation", label: "2.2 Animation" },
-      { id: "animation-rigging", label: "2.3 Animation Rigging / IK" },
-      { id: "facial-animation", label: "2.4 Facial animation" },
-      { id: "lip-sync", label: "2.5 Lip sync" },
-      { id: "npc-ai", label: "2.6 NPC AI / NavMesh" },
-    ],
-  },
-  {
-    id: "world",
-    title: "Phase 3 — World",
-    topics: [
-      { id: "environment-building", label: "3.1 Environment building" },
-      { id: "terrain", label: "3.2 Terrain" },
-      { id: "lighting", label: "3.3 Lighting" },
-      { id: "materials-pbr", label: "3.4 Materials / PBR" },
-      { id: "vfx", label: "3.5 VFX" },
-      { id: "audio", label: "3.6 Audio" },
-    ],
-  },
-  {
-    id: "narrative",
-    title: "Phase 4 — Narrative",
-    topics: [
-      { id: "dialogue-system", label: "4.1 Dialogue system" },
-      { id: "choices", label: "4.2 Choices" },
-      { id: "branching-narrative", label: "4.3 Branching narrative" },
-      { id: "game-state", label: "4.4 Game-state variables" },
-      { id: "consequences", label: "4.5 Consequences" },
-      { id: "narrative-save-load", label: "4.6 Save/load narrative state" },
-    ],
-  },
-  {
-    id: "cinematic",
-    title: "Phase 5 — Cinematic",
-    topics: [
-      { id: "timeline", label: "5.1 Timeline" },
-      { id: "cinemachine", label: "5.2 Cinemachine" },
-      { id: "cutscene-architecture", label: "5.3 Cutscene architecture" },
-      { id: "camera-transitions", label: "5.4 Camera transitions" },
-      { id: "animation-sequencing", label: "5.5 Animation sequencing" },
-      { id: "facial-voice-sync", label: "5.6 Facial/voice/subtitle synchronization" },
-    ],
-  },
-  {
-    id: "presentation",
-    title: "Phase 6 — Presentation",
-    topics: [
-      { id: "ui", label: "6.1 UI" },
-      { id: "menus", label: "6.2 Menus" },
-      { id: "dialogue-ui", label: "6.3 Dialogue UI" },
-      { id: "subtitles", label: "6.4 Subtitles" },
-      { id: "settings", label: "6.5 Settings" },
-      { id: "accessibility", label: "6.6 Accessibility" },
-    ],
-  },
-  {
-    id: "performance",
-    title: "Phase 7 — Performance",
-    topics: [
-      { id: "profiler", label: "7.1 Profiler" },
-      { id: "memory-profiler", label: "7.2 Memory Profiler" },
-      { id: "lod", label: "7.3 LOD" },
-      { id: "occlusion", label: "7.4 Occlusion" },
-      { id: "addressables", label: "7.5 Addressables" },
-      { id: "async-scene-loading", label: "7.6 Async scene loading" },
-      { id: "asset-optimization", label: "7.7 Texture/mesh/audio optimization" },
-    ],
-  },
-  {
-    id: "advanced-unity",
-    title: "Phase 8 — Advanced Unity",
-    topics: [
-      { id: "jobs", label: "8.1 Jobs" },
-      { id: "burst", label: "8.2 Burst" },
-      { id: "dots-ecs", label: "8.3 DOTS / ECS" },
-      { id: "multithreading", label: "8.4 Multithreading" },
-      { id: "advanced-rendering", label: "8.5 Advanced rendering" },
-    ],
-  },
-  {
-    id: "production",
-    title: "Phase 9 — Production",
-    topics: [
-      { id: "version-control", label: "9.1 Git / version control" },
-      { id: "build-pipeline", label: "9.2 Build pipeline" },
-      { id: "pc-optimization", label: "9.3 PC build optimization" },
-      { id: "crash-logging", label: "9.4 Crash/error logging" },
-      { id: "testing", label: "9.5 Testing" },
-      { id: "debugging-tools", label: "9.6 Debugging tools" },
-    ],
-  },
-];
-
-const roadmapResources = [
-  {
-    title: "Motion Matching for Unity",
-    description: "Reference documentation for the system you're learning now.",
-    href: "https://motion-matching-for-unity.readthedocs.io/en/latest/",
-  },
-  {
-    title: "Learned Motion Matching",
-    description: "Unity Asset Store package to explore after the current series.",
-    href: "https://assetstore.unity.com/packages/tools/animation/learned-motion-matching-312510",
-  },
-  {
-    title: "Ubisoft: Learned Motion Matching",
-    description: "Background on Ubisoft La Forge's learned approach.",
-    href: "https://www.ubisoft.com/en-us/studio/laforge/news/6xXL85Q3bF2vEj76xmnmIu/introducing-learned-motion-matching",
-  },
-  {
-    title: "Khronos: Procedural Animation & IK",
-    description: "Physics-driven leaning tutorial; save for the focused animation study.",
-    href: "https://github.khronos.org/Vulkan-Site/tutorial/latest/Advanced_glTF/Procedural_Animation_IK/06_physics_driven_lean.html",
-  },
-  {
-    title: "Aikodex",
-    description: "Tools for real-time animated storytelling.",
-    href: "https://www.aikodex.com/",
-  },
-];
-
-const currentMotionMatchingSeries =
-  "https://www.youtube.com/watch?v=7MPeKDD6TgI&list=PLV3KWwaS27WJqBeZCOVp1h5VKTshdrQrk&index=7";
-
-function readSavedFocusItems(): FocusItem[] {
-  const saved = localStorage.getItem(focusStorageKey);
-  if (!saved) {
-    return [
-      {
-        id: "motion-matching",
-        title: "Motion Matching for Unity (MxM)",
-        url: currentMotionMatchingSeries,
-      },
-      { id: "procedural-animation", title: "Procedural animation and IK/FK", url: "" },
-    ];
-  }
-  const parsed: unknown = JSON.parse(saved);
-  if (
-    !Array.isArray(parsed) ||
-    !parsed.every(
-      (item) =>
-        typeof item.id === "string" &&
-        typeof item.title === "string" &&
-        typeof item.url === "string" &&
-        (item.completed === undefined || typeof item.completed === "boolean") &&
-        (item.sourceTaskId === undefined || typeof item.sourceTaskId === "string"),
-    )
-  ) {
-    throw new Error("Saved current-focus list has an invalid format.");
-  }
-  return parsed;
-}
 
 function getExternalUrl(value: string): string | null {
   if (!value.trim()) return "";
@@ -393,6 +169,20 @@ function NoteField({
 }
 
 function App() {
+  const [articles, setArticles] = useState<GameArticle[]>([]);
+  const sections = useMemo(() => [...new Set(articles.map(article => article.section))], [articles]);
+  const [games, setGames] = useState<{ id: string; name: string }[]>([]);
+  const [currentGame, setCurrentGame] = useState<Game | null>(null);
+  const [requestedGameId, setRequestedGameId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("game") ?? localStorage.getItem("noggin-joggin-selected-game"));
+  const [optionalCurriculum, setCurriculum] = useState<CurriculumPhase[]>([]);
+  const [curriculumTitle,setCurriculumTitle]=useState("Full Unity roadmap");
+  const curriculumParts = useMemo(() => groupEngineCurriculum(optionalCurriculum), [optionalCurriculum]);
+  const engineTopicCount = useMemo(() => optionalCurriculum.filter((phase) => !phase.gameSpecific).reduce((count, phase) => count + phase.topics.length, 0), [optionalCurriculum]);
+  const [planSummary,setPlanSummary]=useState<PlanSummary|null>(null);
+  const [archivedArticles,setArchivedArticles]=useState<GameArticle[]>([]);
+  const [roadmapResources, setResources] = useState<{ title: string; description: string; href: string }[]>([]);
+  const [newStageDraft, setNewStageDraft] = useState(false);
+  const [removeHeadingId, setRemoveHeadingId] = useState<string | null>(null);
   const [initialUrlState] = useState(readUrlState);
   const [focusedField, setFocusedField] = useState({
     fieldId: initialUrlState.fieldId,
@@ -400,45 +190,72 @@ function App() {
   });
   const [activeId, setActiveId] = useState(initialUrlState.articleId);
   const [query, setQuery] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authToken, setAuthToken] = useState(
+    () => sessionStorage.getItem(authTokenStorageKey),
+  );
+  const isAuthenticated = Boolean(authToken);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginPending, setLoginPending] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState("");
+  const [dataLoadAttempt, setDataLoadAttempt] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(
     () => localStorage.getItem(themeStorageKey) === "dark",
   );
   const [fieldValues, setFieldValues] = useState<FieldValues>({});
   const [editableRoadmapStages, setEditableRoadmapStages] =
-    useState<RoadmapStage[]>(loadSavedRoadmapStages);
+    useState<RoadmapStage[]>([]);
   const [roadmapStageDraft, setRoadmapStageDraft] =
     useState<RoadmapStageDraft | null>(null);
   const [newRoadmapTaskLabel, setNewRoadmapTaskLabel] = useState("");
-  const [focusItems, setFocusItems] = useState<FocusItem[]>(readSavedFocusItems);
+  const [taskCatalog, setTaskCatalog] = useState<TaskCategory[]>([]);
+  const [headingBaseline, setHeadingBaseline] = useState("");
+  const [headingIntent, setHeadingIntent] = useState<HeadingIntent | null>(null);
+  const [headingPending, setHeadingPending] = useState(false);
+  const [headingSaveError, setHeadingSaveError] = useState("");
+  const headingDirty = Boolean(roadmapStageDraft && headingHasChanges(roadmapStageDraft, headingBaseline, newRoadmapTaskLabel));
+  useEffect(() => {
+    if (!headingDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [headingDirty]);
+  const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
   const [focusError, setFocusError] = useState("");
   const [editingFocusId, setEditingFocusId] = useState("");
   const [draggingFocusId, setDraggingFocusId] = useState("");
   const draggedFocusIdRef = useRef("");
   const [countdownNow, setCountdownNow] = useState(() => new Date());
-  const [saveState, setSaveState] = useState("Loading notes...");
-  const notesLoaded = useRef(false);
+  const [saveState, setSaveState] = useState("Loading your data...");
+  const saveQueue = useMemo(() => createSaveQueue({ onState: (state) => { if (authToken) setSaveState(state); } }), [authToken]);
+  const savedFieldsRef = useRef<FieldValues>({});
+  const noteVersionsRef = useRef<Record<string, number>>({});
+  const savedRoadmapRef = useRef("");
+  const savedFocusRef = useRef("");
+  const roadmapVersionRef = useRef(1);
+  const focusVersionRef = useRef(1);
+  useEffect(() => () => saveQueue.cancel(), [saveQueue]);
   const importInputRef = useRef<HTMLInputElement>(null);
   const activeArticle =
-    articles.find((article) => article.id === activeId) ?? articles[0];
+    articles.find((article) => article.id === activeId) ?? articles[0] ?? emptyArticle;
   const isRoadmapPage = activeId === "demo-roadmap";
   const today = new Date();
-  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const currentRoadmapStage =
-    editableRoadmapStages.find((stage) => {
-      const start = new Date(`${stage.startsOn}T00:00:00`);
-      const end = new Date(`${stage.endsOn}T00:00:00`);
-      return todayDate >= start && todayDate < end;
-    }) ?? editableRoadmapStages[editableRoadmapStages.length - 1];
+  const timeZone = currentGame?.timeZone ?? "Asia/Karachi";
+  const todayParts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(today);
+  const todayKey = ["year", "month", "day"].map(part => todayParts.find(value => value.type === part)?.value).join("-");
+  const currentRoadmapStage = editableRoadmapStages.find(stage => stage.startsOn && stage.endsOn && stage.startsOn <= todayKey && todayKey < stage.endsOn);
+  const deadline = currentGame?.dueAt ? new Date(currentGame.dueAt) : null;
+  const deadlineLabel = deadline ? deadline.toLocaleDateString("en", { timeZone, day: "numeric", month: "long", year: "numeric" }) : "No deadline set";
+  const deadlineShort = deadline ? deadline.toLocaleDateString("en", { timeZone, month: "short", year: "2-digit" }).toUpperCase() : "SET TARGET";
+  const displayStages = editableRoadmapStages;
   const activeFocusItems = focusItems.filter((item) => !item.completed);
   const completedFocusItems = focusItems.filter((item) => item.completed);
   const countdownDistance = Math.max(
     0,
-    demoDeadline.getTime() - countdownNow.getTime(),
+    (deadline?.getTime() ?? countdownNow.getTime()) - countdownNow.getTime(),
   );
   const countdownDays = Math.floor(countdownDistance / 86_400_000);
   const countdownHours = Math.floor((countdownDistance % 86_400_000) / 3_600_000);
@@ -469,7 +286,7 @@ function App() {
         });
       const fieldLabels = article.body.length ? article.body : ["Section notes"];
       fieldLabels.forEach((fieldLabel, index) => {
-        const fieldId = `${article.id}-${index}`;
+        const fieldId = article.fieldKeys[index] ?? `${article.id}-${index}`;
         const note = fieldValues[fieldId] ?? "";
         const normalizedNote = normalizeSearchText(note);
         if (!normalizedNote.includes(normalizedQuery)) return;
@@ -489,7 +306,7 @@ function App() {
       });
       return [...headingMatches, ...noteMatches];
     });
-  }, [fieldValues, query]);
+  }, [articles, fieldValues, query]);
   const selectArticle = (id: string) => {
     setActiveId(id);
     setQuery("");
@@ -512,46 +329,113 @@ function App() {
   const previousArticle = articles[activeIndex - 1];
   const nextArticle = articles[activeIndex + 1];
   useEffect(() => {
-    fetch("/api/notes")
-      .then((response) => response.json() as Promise<{ fields?: FieldValues }>)
-      .then((saved) => {
-        setFieldValues(saved.fields ?? {});
-        notesLoaded.current = true;
-        setSaveState("Saved to notes.json");
-      })
-      .catch(() => setSaveState("Notes file unavailable"));
-  }, []);
+    if (!authToken) return;
+    let cancelled = false;
+    const loadData = async () => {
+      try {
+        const list = await apiRequest<{ games: { id: string; name: string }[] }>("/story-dump/games", authToken);
+        const selected = list.games.find(game => game.id === requestedGameId) ?? list.games[0];
+        if (!selected) throw new Error("No game documentation is available.");
+        const saved = await apiRequest<StoryData>(`/story-dump/games/${selected.id}`, authToken);
+        if (cancelled) return;
+        setGames(list.games); setCurrentGame(saved.game); setArticles(saved.articles);
+        setCurriculum(saved.curriculum); setResources(saved.resources); setTaskCatalog(saved.taskCatalog ?? []);
+        setCurriculumTitle(saved.curriculumTitle);setPlanSummary(saved.planSummary);setArchivedArticles(saved.archivedArticles??[]);
+        savedFieldsRef.current = saved.fields; noteVersionsRef.current = saved.noteVersions;
+        savedRoadmapRef.current = JSON.stringify(saved.roadmapStages); savedFocusRef.current = JSON.stringify(saved.focusItems);
+        roadmapVersionRef.current = saved.roadmapVersion; focusVersionRef.current = saved.game.focusVersion;
+        setFieldValues(saved.fields); setEditableRoadmapStages(saved.roadmapStages); setFocusItems(saved.focusItems);
+        setRoadmapStageDraft(null); setNewStageDraft(false); setEditingFocusId(""); setQuery("");
+        localStorage.setItem("noggin-joggin-selected-game", saved.game.id);
+        const url = new URL(window.location.href); url.searchParams.set("game", saved.game.id); window.history.replaceState({}, "", url);
+        setSaveState("Connected to server"); setDataLoadError(""); setDataReady(true);
+      } catch (error) {
+        if (!cancelled) setDataLoadError(error instanceof Error ? error.message : "Could not load this game.");
+      }
+    };
+    void loadData();
+    return () => { cancelled = true; };
+  }, [authToken, requestedGameId, dataLoadAttempt]);
+
   useEffect(() => {
-    if (!notesLoaded.current) return;
-    setSaveState("Saving...");
-    const saveTimer = window.setTimeout(() => {
-      fetch("/api/notes", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          version: 1,
-          savedAt: new Date().toISOString(),
-          fields: fieldValues,
-        }),
-      })
-        .then(() => setSaveState("Saved to notes.json"))
-        .catch(() => setSaveState("Could not save notes.json"));
-    }, 350);
-    return () => window.clearTimeout(saveTimer);
-  }, [fieldValues]);
+    if (!authToken || !dataReady || !currentGame) return;
+    const gameId = currentGame.id;
+    const roadmapSnapshot = JSON.stringify(editableRoadmapStages), focusSnapshot = JSON.stringify(focusItems);
+    const fieldsSnapshot = { ...fieldValues };
+    const fieldIds = new Map(articles.flatMap(article => article.fieldKeys.map((key, index) => [key, article.fieldIds[index]] as const)));
+    if (JSON.stringify(fieldsSnapshot) === JSON.stringify(savedFieldsRef.current) && roadmapSnapshot === savedRoadmapRef.current && focusSnapshot === savedFocusRef.current) return;
+    saveQueue.schedule(async () => {
+      const keys = new Set([...Object.keys(savedFieldsRef.current), ...Object.keys(fieldsSnapshot)]);
+      const changes = [...keys].filter(key => (fieldsSnapshot[key] ?? "") !== (savedFieldsRef.current[key] ?? "")).map(key => {
+        const fieldId = fieldIds.get(key);
+        if (!fieldId) throw new Error("A note does not match the documentation template. Export your notes before reloading.");
+        return { fieldId, body: fieldsSnapshot[key] ?? "", expectedVersion: noteVersionsRef.current[fieldId] ?? 0 };
+      });
+      if (changes.length) {
+        const result = await apiRequest<{ versions: Record<string, number> }>(`/story-dump/games/${gameId}/notes`, authToken, { method: "PUT", body: JSON.stringify({ changes,expectedDocumentationVersion:currentGame.documentationVersion }) });
+        noteVersionsRef.current = { ...noteVersionsRef.current, ...result.versions };
+      }
+      savedFieldsRef.current = fieldsSnapshot;
+      if (roadmapSnapshot !== savedRoadmapRef.current) {
+        const result = await apiRequest<{ version: number }>(`/story-dump/games/${gameId}/roadmap`, authToken, { method: "PUT", body: JSON.stringify({ stages: editableRoadmapStages, expectedVersion: roadmapVersionRef.current }) });
+        roadmapVersionRef.current = result.version; savedRoadmapRef.current = roadmapSnapshot;
+      }
+      if (focusSnapshot !== savedFocusRef.current) {
+        const result = await apiRequest<{ version: number }>(`/story-dump/games/${gameId}/focus`, authToken, { method: "PUT", body: JSON.stringify({ items: focusItems, expectedVersion: focusVersionRef.current }) });
+        focusVersionRef.current = result.version; savedFocusRef.current = focusSnapshot;
+      }
+    });
+  }, [authToken, dataReady, currentGame, articles, editableRoadmapStages, fieldValues, focusItems, saveQueue]);
+
+  async function switchGame(id: string) {
+    if (id === currentGame?.id) return;
+    if (roadmapStageDraft || editingFocusId) throw new Error("Save or cancel the open stage or focus editor before switching games.");
+    await saveQueue.flush();
+    setDataReady(false); setDataLoadError(""); setRequestedGameId(id);
+  }
+  async function createGame(values: GameValues) {
+    if (roadmapStageDraft || editingFocusId) throw new Error("Save or cancel the open editor before creating another game.");
+    await saveQueue.flush();
+    const result = await apiRequest<{ game: Game }>("/story-dump/games", authToken ?? undefined, { method: "POST", body: JSON.stringify(values) });
+    await switchGame(result.game.id);
+  }
+  async function deleteGame() {
+    if (!currentGame) throw new Error("Choose a game before deleting it.");
+    if (games.length <= 1) throw new Error("You must keep at least one game. Create another game first.");
+    if (roadmapStageDraft || editingFocusId) throw new Error("Save or cancel the open stage or focus editor before deleting this game.");
+    await saveQueue.flush();
+    const result = await apiRequest<{ games: { id: string; name: string }[]; nextGameId: string }>(
+      "/story-dump/games/" + currentGame.id, authToken ?? undefined, { method: "DELETE" });
+    saveQueue.cancelPending();
+    setDataReady(false); setDataLoadError(""); setCurrentGame(null); setGames(result.games);
+    setRequestedGameId(result.nextGameId); setDataLoadAttempt(attempt => attempt + 1);
+  }
+  async function updateDocument(path:string,method:string,body:object) {
+    if(!currentGame)throw new Error('Choose a game first.');
+    if(roadmapStageDraft||editingFocusId)throw new Error('Save or close the open stage or focus editor first.');
+    await saveQueue.flush();
+    const saved=await apiRequest<StoryData>('/story-dump/games/'+currentGame.id+path,authToken??undefined,{method,body:JSON.stringify({...body,expectedVersion:currentGame.version,expectedDocumentationVersion:currentGame.documentationVersion})});
+    saveQueue.cancelPending();
+    savedFieldsRef.current=saved.fields;noteVersionsRef.current=saved.noteVersions;
+    savedRoadmapRef.current=JSON.stringify(saved.roadmapStages);savedFocusRef.current=JSON.stringify(saved.focusItems);
+    roadmapVersionRef.current=saved.roadmapVersion;focusVersionRef.current=saved.game.focusVersion;
+    setFieldValues(saved.fields);setCurrentGame(saved.game);setArticles(saved.articles);setArchivedArticles(saved.archivedArticles??[]);
+    setCurriculum(saved.curriculum);setCurriculumTitle(saved.curriculumTitle);setPlanSummary(saved.planSummary);
+    setResources(saved.resources);setTaskCatalog(saved.taskCatalog);setEditableRoadmapStages(saved.roadmapStages);setFocusItems(saved.focusItems);
+  }
+  async function applyGamePlan(planProfile:PlanProfile,gameDimension:GameDimension,enabledModules:string[],previewToken:string){
+    await updateDocument('/plan','PUT',{planProfile,gameDimension,enabledModules,previewToken});
+  }
+  async function updateGame(values: GameValues) {
+    if (!currentGame) return;
+    await saveQueue.flush();
+    const result = await apiRequest<{ game: Game }>(`/story-dump/games/${currentGame.id}`, authToken ?? undefined, { method: "PATCH", body: JSON.stringify({ ...values, expectedVersion: currentGame.version }) });
+    setCurrentGame(result.game); setGames(items => items.map(game => game.id === result.game.id ? { id: game.id, name: result.game.name } : game));
+  }
   useEffect(() => {
     const timer = window.setInterval(() => setCountdownNow(new Date()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => {
-    localStorage.setItem(focusStorageKey, JSON.stringify(focusItems));
-  }, [focusItems]);
-  useEffect(() => {
-    localStorage.setItem(
-      roadmapPlanStorageKey,
-      JSON.stringify(editableRoadmapStages),
-    );
-  }, [editableRoadmapStages]);
   const addFocusItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -565,7 +449,7 @@ function App() {
     }
     setFocusItems((items) => [
       ...items,
-      { id: `${Date.now()}-${title}`, title, url },
+      { id: crypto.randomUUID(), title, url },
     ]);
     setFocusError("");
     form.reset();
@@ -620,60 +504,56 @@ function App() {
     sourceTaskId: string,
     url = "",
   ) => {
-    const existingId = `roadmap-${sourceTaskId}`;
-    setFocusItems((items) => {
-      const existing = items.find(
-        (item) =>
-          item.sourceTaskId === sourceTaskId ||
-          item.id === existingId ||
-          item.id === task.id,
-      );
-      const nextItem: FocusItem = existing
-        ? { ...existing, sourceTaskId, completed: false }
-        : {
-            id: existingId,
-            sourceTaskId,
-            title: task.label.replace(/^(Now|Next) — /, ""),
-            url,
-          };
-      const activeItems = items.filter(
-        (item) => !item.completed && item.id !== nextItem.id,
-      );
-      const completedItems = items.filter(
-        (item) => item.completed && item.id !== nextItem.id,
-      );
-      return [...activeItems, nextItem, ...completedItems];
-    });
+    setFocusItems(items => addSourceTaskToFocus(items, task, sourceTaskId, url));
   };
-  const startEditingRoadmapStage = (stage: RoadmapStage) => {
-    setRoadmapStageDraft({
-      id: stage.id,
-      title: stage.title,
-      tasks: stage.tasks.map((task) => ({ ...task })),
-    });
-    setNewRoadmapTaskLabel("");
+  function applyHeadingIntent(intent: HeadingIntent, stages = editableRoadmapStages) {
+    setHeadingIntent(null); setHeadingSaveError(""); setNewRoadmapTaskLabel(""); setRemoveHeadingId(null);
+    if (intent.kind === "close") { setRoadmapStageDraft(null); setNewStageDraft(false); setHeadingBaseline(""); return; }
+    const selected = intent.kind === "new"
+      ? { id: crypto.randomUUID(), title: "", description: "", startsOn: "", endsOn: "", period: "UNSCHEDULED", tasks: [] }
+      : stages.find(stage => stage.id === intent.id);
+    if (!selected) { setRoadmapStageDraft(null); setNewStageDraft(false); return; }
+    const draft = { ...selected, tasks: selected.tasks.map(task => ({ ...task })) };
+    setHeadingBaseline(headingSnapshot(draft));
+    setNewStageDraft(intent.kind === "new"); setRoadmapStageDraft(draft);
+  }
+  function requestHeadingIntent(intent: HeadingIntent) {
+    if (headingPending || (intent.kind === "edit" && roadmapStageDraft?.id === intent.id)) return;
+    if (roadmapStageDraft && headingHasChanges(roadmapStageDraft, headingBaseline, newRoadmapTaskLabel)) { setHeadingIntent(intent); return; }
+    applyHeadingIntent(intent);
+  }
+  const startEditingRoadmapStage = (stage: RoadmapStage) => requestHeadingIntent({ kind: "edit", id: stage.id });
+  const addHeading = () => requestHeadingIntent({ kind: "new" });
+  const saveRoadmapStage = async (after: HeadingIntent = { kind: "close" }) => {
+    if (!roadmapStageDraft || !currentGame || !authToken || headingPending) return;
+    if (!headingHasChanges(roadmapStageDraft, headingBaseline, newRoadmapTaskLabel)) { applyHeadingIntent(after); return; }
+    setHeadingSaveError("");
+    try {
+      setHeadingPending(true);
+      const { nextStages, result } = await persistHeadingDraft({ draft: roadmapStageDraft, pendingTask: newRoadmapTaskLabel,
+        stages: editableRoadmapStages, isNew: newStageDraft, formatPeriod: stagePeriod, flush: () => saveQueue.retry(),
+        write: stages => apiRequest<{ version: number }>("/story-dump/games/" + currentGame.id + "/roadmap", authToken,
+          { method: "PUT", body: JSON.stringify({ stages, expectedVersion: roadmapVersionRef.current }) }) });
+      roadmapVersionRef.current = result.version; savedRoadmapRef.current = JSON.stringify(nextStages);
+      setEditableRoadmapStages(nextStages); setSaveState("Saved to server");
+      applyHeadingIntent(after, nextStages);
+    } catch (caught) {
+      setHeadingSaveError(caught instanceof Error ? caught.message : "Could not save this stage. Your draft is still open.");
+    } finally { setHeadingPending(false); }
   };
-  const saveRoadmapStage = () => {
-    if (!roadmapStageDraft) return;
-    setEditableRoadmapStages((stages) =>
-      stages.map((stage) =>
-        stage.id === roadmapStageDraft.id
-          ? { ...stage, title: roadmapStageDraft.title, tasks: roadmapStageDraft.tasks }
-          : stage,
-      ),
-    );
-    setRoadmapStageDraft(null);
-    setNewRoadmapTaskLabel("");
+  const addSuggestedRoadmapTask = (label: string, taskCategoryId: string) => {
+    setRoadmapStageDraft(draft => draft && draft.tasks.length < 200 && !draft.tasks.some(task => task.label.trim().toLowerCase() === label.trim().toLowerCase())
+      ? { ...draft, taskCategoryId, tasks: [...draft.tasks, { id: crypto.randomUUID(), label }] } : draft);
   };
-  const addRoadmapStageTask = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const addRoadmapStageTask = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     const label = newRoadmapTaskLabel.trim();
-    if (!roadmapStageDraft || !label) return;
+    if (!roadmapStageDraft || !label || roadmapStageDraft.tasks.length >= 200 || headingPending) return;
     setRoadmapStageDraft((draft) =>
       draft
         ? {
             ...draft,
-            tasks: [...draft.tasks, { id: `${draft.id}-${Date.now()}`, label }],
+            tasks: [...draft.tasks, { id: crypto.randomUUID(), label }],
           }
         : draft,
     );
@@ -692,7 +572,14 @@ function App() {
         JSON.stringify(
           {
             app: "Noggin Joggin",
-            version: 1,
+            version: 3,
+            archivedArticles,
+            curriculumTitle,planSummary,
+            game: currentGame,
+            roadmapStages: editableRoadmapStages,
+            focusItems,
+            curriculum: optionalCurriculum,
+            articles,
             savedAt: new Date().toISOString(),
             fields: fieldValues,
           },
@@ -705,7 +592,7 @@ function App() {
     const url = URL.createObjectURL(file);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "noggin-joggin-notes.json";
+    link.download = `${currentGame?.name.replace(/[^a-z0-9-]/gi, "-") ?? "game"}-documentation.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -716,7 +603,7 @@ function App() {
         const parsed = JSON.parse(String(reader.result)) as {
           fields?: FieldValues;
         };
-        if (!parsed.fields || typeof parsed.fields !== "object")
+        if (!parsed.fields || typeof parsed.fields !== "object" || Array.isArray(parsed.fields) || !Object.values(parsed.fields).every(value => typeof value === "string") || Object.keys(parsed.fields).some(key => !articles.some(article => article.fieldKeys.includes(key))))
           throw new Error("Invalid notes file");
         setFieldValues(parsed.fields);
         setSaveState("Imported; saving...");
@@ -728,20 +615,51 @@ function App() {
   };
   const openImportPicker = () => importInputRef.current?.click();
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (username === "Ywen Wander" && password === "whyeven") {
-      setIsAuthenticated(true);
+    setLoginPending(true);
+    try {
+      const result = await apiRequest<{ token: string }>(
+        "/story-dump/auth/login",
+        undefined,
+        {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+        },
+      );
+      sessionStorage.setItem(authTokenStorageKey, result.token);
+      setAuthToken(result.token);
       setLoginError("");
-      return;
+      setDataLoadError("");
+      setPassword("");
+    } catch (error) {
+      setLoginError(
+        error instanceof Error ? error.message : "Could not sign in to the server.",
+      );
+    } finally {
+      setLoginPending(false);
     }
-    setLoginError("That username or password is not correct.");
+  };
+
+  const signOut = async () => {
+    try { await saveQueue.flush(); } catch { return; }
+    if (authToken) {
+      try {
+        await apiRequest<void>("/story-dump/auth/logout", authToken, { method: "POST" });
+      } catch (error) {
+        console.error("Could not end the server session.", error);
+      }
+    }
+    sessionStorage.removeItem(authTokenStorageKey);
+    setAuthToken(null);
+    setDataReady(false);
+    setDataLoadError("");
   };
 
   if (!isAuthenticated) {
     return (
       <main className={`login-screen ${darkMode ? "theme-dark" : ""}`}>
-        <button
+        <Button
           className="login-theme-toggle"
           type="button"
           aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
@@ -753,7 +671,7 @@ function App() {
           }}
         >
           {darkMode ? "☼" : "☾"}
-        </button>
+        </Button>
         <div className="login-panel">
           <div className="login-brand">
             <span className="brand-symbol">NJ</span>
@@ -791,12 +709,42 @@ function App() {
                 {loginError}
               </div>
             )}
-            <button type="submit">
-              Enter the archive <span>→</span>
-            </button>
+            <Button type="submit" disabled={loginPending} disabledReason="Wait for sign-in to finish.">
+              {loginPending ? "Signing in..." : <>Enter the archive <span>→</span></>}
+            </Button>
           </form>
         </div>
         <div className="login-mark">NJ / 01</div>
+      </main>
+    );
+  }
+
+  if (!dataReady) {
+    return (
+      <main className={`login-screen ${darkMode ? "theme-dark" : ""}`}>
+        <div className="login-panel">
+          <div className="login-kicker">FIELD GUIDE // PRIVATE ACCESS</div>
+          <h1>{dataLoadError ? "Server unavailable." : "Loading your data."}</h1>
+          <p>
+            {dataLoadError
+              ? dataLoadError
+              : "Connecting to your private workspace..."}
+          </p>
+          {dataLoadError && (
+            <Button
+              type="button"
+              onClick={() => {
+                setDataLoadError("");
+                setDataLoadAttempt((attempt) => attempt + 1);
+              }}
+            >
+              Try again
+            </Button>
+          )}
+          <Button type="button" onClick={() => void signOut()}>
+            Sign out
+          </Button>
+        </div>
       </main>
     );
   }
@@ -813,69 +761,100 @@ function App() {
         <div className="edition">
           FIELD GUIDE <span>v1.0</span>
         </div>
+        <GameControls games={games} current={currentGame} onSwitch={switchGame} onCreate={createGame} onUpdate={updateGame} onDelete={deleteGame} token={authToken??undefined} onApplyPlan={applyGamePlan} />
         <nav className="side-nav" aria-label="Documentation sections">
-          <button
+          <Button
             className="nav-home"
             type="button"
             onClick={() => selectArticle("doc-1")}
           >
             <span className="nav-icon">⌂</span> Index
-          </button>
-          <button
+          </Button>
+          <Button
             className={`roadmap-nav ${isRoadmapPage ? "active" : ""}`}
             type="button"
             onClick={() => selectArticle("demo-roadmap")}
           >
-            <span>OCT ’27</span> Demo countdown & roadmap
-          </button>
-          {sections.map((section) => (
-            <div className="nav-group" key={section}>
-              <p>{section}</p>
-              {articles
-                .filter((article) => article.section === section)
-                .map((article) => (
-                  <button
-                    type="button"
-                    className={activeArticle.id === article.id ? "active" : ""}
-                    key={article.id}
-                    onClick={() => selectArticle(article.id)}
-                  >
-                    <span>{article.label}</span>
-                    {article.title}
-                  </button>
-                ))}
-            </div>
-          ))}
+            <span>{deadlineShort}</span> Deadline & roadmap
+          </Button>
+          {sections.map((section) => {
+            const sectionArticles = articles.filter(article => article.section === section);
+            const overview = sectionArticles.find(article => article.title === section);
+            const target = overview ?? sectionArticles[0];
+            if (!target) return null;
+            const children = overview ? sectionArticles.filter(article => article.id !== overview.id) : sectionArticles;
+            const selected = !isRoadmapPage && activeArticle.id === overview?.id;
+            return <div className="nav-group" key={section}>
+              <Button type="button" className={selected ? "nav-section active" : "nav-section"}
+                aria-current={selected ? "page" : undefined} onClick={() => selectArticle(target.id)}>
+                {sidebarTitle(section)}
+              </Button>
+              <div className="nav-group-children">
+                {children.map(article => {
+                  const childSelected = !isRoadmapPage && activeArticle.id === article.id;
+                  return <Button type="button" className={childSelected ? "nav-subsection active" : "nav-subsection"}
+                    aria-current={childSelected ? "page" : undefined} key={article.id} onClick={() => selectArticle(article.id)}>
+                    {sidebarTitle(article.title)}
+                  </Button>;
+                })}
+              </div>
+            </div>;
+          })}
         </nav>
         <div className="sidebar-footer">
-          <span className="status-dot" /> Archive synced <span>⌘ K</span>
+          <span className="status-dot" /> {saveState || "Connected"} <span>⌘ K</span>
         </div>
       </aside>
       {menuOpen && (
-        <button
+        <Button
           className="menu-backdrop"
           type="button"
           aria-label="Close navigation"
           onClick={() => setMenuOpen(false)}
         />
       )}
+      {roadmapStageDraft && <HeadingDialog key={roadmapStageDraft.id} draft={roadmapStageDraft} isNew={newStageDraft}
+        headings={editableRoadmapStages} onSwitchHeading={id => requestHeadingIntent({ kind: "edit", id })} onNewHeading={addHeading}
+        onRemove={() => setRemoveHeadingId(roadmapStageDraft.id)} pending={headingPending} dirty={headingDirty}
+        saveError={headingIntent ? "" : headingSaveError} timeZone={timeZone} developmentProfile={currentGame ?? undefined}
+        taskCatalog={taskCatalog} onAddSuggestion={addSuggestedRoadmapTask}
+        onChange={setRoadmapStageDraft} taskLabel={newRoadmapTaskLabel} onTaskLabelChange={setNewRoadmapTaskLabel}
+        onAddTask={() => addRoadmapStageTask()} onSave={() => saveRoadmapStage()}
+        onClose={() => requestHeadingIntent({ kind: "close" })}>
+        {headingIntent && <GameDialog title="Unsaved stage changes" closeDisabled={headingPending} onClose={() => { if (!headingPending) { setHeadingIntent(null); setHeadingSaveError(""); } }}>
+          <p className="game-dialog-intro">You have unsaved changes in <strong>{roadmapStageDraft.title || "this new stage"}</strong>.
+            {headingIntent.kind === "close" ? " Save them before closing, or discard this draft." : " Save or discard them before opening " + (headingIntent.kind === "new" ? "a new stage." : (editableRoadmapStages.find(stage => stage.id === headingIntent.id)?.title ?? "the selected stage") + ".")}</p>
+          {headingSaveError && <p className="game-editor-error" role="alert">{headingSaveError} Your draft has been kept.</p>}
+          {headingValidationError(roadmapStageDraft, newRoadmapTaskLabel) && <p className="game-editor-help">{headingValidationError(roadmapStageDraft, newRoadmapTaskLabel)} Keep editing to fix it, or discard the draft.</p>}
+          <div className="game-dialog-actions heading-unsaved-actions">
+            <Button type="button" autoFocus disabled={headingPending} disabledReason="Wait for this stage to finish saving." onClick={() => { setHeadingIntent(null); setHeadingSaveError(""); }}>Keep editing</Button>
+            <Button type="button" disabled={headingPending} disabledReason="Wait for this stage to finish saving." onClick={() => applyHeadingIntent(headingIntent)}>{headingIntent.kind === "close" ? "Discard & close" : "Discard & switch"}</Button>
+            <Button type="button" className="game-primary" disabled={headingPending || Boolean(headingValidationError(roadmapStageDraft, newRoadmapTaskLabel))} disabledReason={headingPending ? "Wait for this stage to finish saving." : headingValidationError(roadmapStageDraft, newRoadmapTaskLabel)}
+              onClick={() => void saveRoadmapStage(headingIntent)}>{headingPending ? "Saving…" : headingIntent.kind === "close" ? "Save & close" : "Save & switch"}</Button>
+          </div>
+        </GameDialog>}
+        {removeHeadingId && <GameDialog title="Remove this stage?" onClose={() => setRemoveHeadingId(null)}>
+          <p className="game-dialog-intro">The stage and its tasks will leave this roadmap, including any edits in this draft. Existing focus items stay in your queue.</p>
+          <div className="game-dialog-actions"><Button type="button" onClick={() => setRemoveHeadingId(null)}>Keep stage</Button><Button className="game-primary" type="button" onClick={() => { setEditableRoadmapStages(stages => stages.filter(stage => stage.id !== removeHeadingId)); applyHeadingIntent({ kind: "close" }); }}>Remove stage</Button></div>
+        </GameDialog>}
+      </HeadingDialog>}
       <main className="main-content">
         <header className="topbar">
-          <button
+          <Button
             className="menu-button"
             type="button"
             aria-label="Toggle navigation"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             ☰
-          </button>
+          </Button>
           <div className="breadcrumbs">
-            <span>NOGGIN JOGGIN</span>
+            <span>{currentGame?.name.toUpperCase() ?? "NOGGIN JOGGIN"}</span>
             <b>/</b>
-            {isRoadmapPage ? "DEMO DEADLINE" : activeArticle.section.toUpperCase()}
+            {isRoadmapPage ? "GAME TARGET" : activeArticle.section.toUpperCase()}
             <b>/</b>
             <strong>
-              {isRoadmapPage ? "OCTOBER 2027" : activeArticle.title.toUpperCase()}
+              {isRoadmapPage ? deadlineLabel.toUpperCase() : activeArticle.title.toUpperCase()}
             </strong>
           </div>
           <label className="search-box">
@@ -888,7 +867,7 @@ function App() {
             />
             <kbd>⌘ K</kbd>
           </label>
-          <button
+          <Button
             className="theme-toggle"
             type="button"
             aria-label={
@@ -905,13 +884,16 @@ function App() {
             }}
           >
             {darkMode ? "☼" : "☾"}
-          </button>
+          </Button>
+          <Button className="theme-toggle" type="button" onClick={() => void signOut()} title="Sign out">
+            ↪
+          </Button>
         </header>
         <div className="content-wrap">
           <section className="intro-block">
             <div className="eyebrow">
               {isRoadmapPage ? (
-                <>PERSONAL MILESTONE <span>//</span> OCTOBER 2027</>
+                <>GAME MILESTONE <span>//</span> {deadlineLabel.toUpperCase()}</>
               ) : (
                 <>
                   {activeArticle.kicker} <span>//</span> {activeArticle.label} /{" "}
@@ -919,15 +901,15 @@ function App() {
                 </>
               )}
             </div>
-            <h1>{isRoadmapPage ? "The demo deadline" : activeArticle.title}</h1>
+            <h1>{isRoadmapPage ? "Your game roadmap" : activeArticle.title}</h1>
             <p className="lead">
               {isRoadmapPage
-                ? "A practical countdown and staged plan to turn your Unity learning into a focused 20–30 minute narrative-adventure demo."
+                ? `Plan the next milestones for ${currentGame?.name}. Add stages, break them into tasks, and keep your current focus close.`
                 : activeArticle.summary}
             </p>
             <div className="tag-row">
               {(isRoadmapPage
-                ? ["20–30 MINUTES", "LEARNING → PLAYABLE DEMO", "FOCUS CHECKLIST SAVES HERE"]
+                ? ["GAME ROADMAP", "MILESTONES", "CURRENT FOCUS"]
                 : activeArticle.tags
               ).map((tag) => (
                 <span key={tag}>{tag}</span>
@@ -943,7 +925,7 @@ function App() {
               </div>
               {searchResults.length ? (
                 searchResults.map((result) => (
-                  <button
+                  <Button
                     className="result-row"
                     type="button"
                     key={`${result.article.id}-${result.fieldId || "heading"}`}
@@ -959,10 +941,10 @@ function App() {
                     </div>
                     <small>{result.article.section}</small>
                     <i>↗</i>
-                  </button>
+                  </Button>
                 ))
               ) : (
-                <p className="empty-state">No headings or saved notes match “{query}”.</p>
+                <p className="empty-state">No stages or saved notes match “{query}”.</p>
               )}
             </section>
           ) : (
@@ -970,24 +952,30 @@ function App() {
               <div className="section-heading">
                 <span>
                   {isRoadmapPage
-                    ? "YOUR OCTOBER 2027 PLAN"
+                    ? "YOUR GAME PLAN"
                     : activeArticle.id === "doc-1"
                     ? "READ THIS FIRST"
                     : "FILL IN THIS SECTION"}
                 </span>
                 {isRoadmapPage ? (
-                  <small>DEMO-FIRST TIMELINE</small>
+                  <div className="section-tools">
+                    <small role="status">{saveState}</small>
+                    {saveState.startsWith("Could not save:") && <Button type="button" onClick={() => void saveQueue.retry().catch(() => {})}>Retry save</Button>}
+                    <Button type="button" onClick={exportNotes}>Export game JSON</Button>
+                  </div>
                 ) : activeArticle.id === "doc-1" ? (
                   <small>GUIDANCE</small>
                 ) : (
                   <div className="section-tools">
                     <small>{saveState}</small>
-                    <button type="button" onClick={exportNotes}>
-                      Export JSON
-                    </button>
-                    <button type="button" onClick={openImportPicker}>
-                      Import JSON
-                    </button>
+                    {saveState.startsWith("Could not save:") && <Button type="button"
+                      onClick={() => void saveQueue.retry().catch(() => {})}>Retry save</Button>}
+                    <Button type="button" onClick={exportNotes}>
+                      Export game JSON
+                    </Button>
+                    <Button type="button" onClick={openImportPicker}>
+                      Import notes JSON
+                    </Button>
                     <input
                       ref={importInputRef}
                       type="file"
@@ -1001,22 +989,23 @@ function App() {
                   </div>
                 )}
               </div>
+              {!isRoadmapPage&&currentGame?.planProfile&&<DocumentationTools article={activeArticle} articles={articles} archived={archivedArticles} onCreate={value=>updateDocument("/documentation","POST",value)} onEdit={(key,value)=>updateDocument("/documentation/"+encodeURIComponent(key),"PATCH",value)}/>}
               {isRoadmapPage ? (
                 <div className="roadmap-content">
-                  <section className="countdown-panel" aria-label="Countdown to October 2027">
+                  <section className="countdown-panel" aria-label={`Countdown: ${deadlineLabel}`}>
                     <div>
                       <span className="roadmap-overline">TIME TO YOUR TARGET</span>
-                      <strong>
+                      {deadline ? <strong>
                         {countdownDays} <small>days</small>{" "}
                         {String(countdownHours).padStart(2, "0")} <small>hours</small>{" "}
                         {String(countdownMinutes).padStart(2, "0")} <small>min</small>{" "}
                         {String(countdownSeconds).padStart(2, "0")} <small>sec</small>
-                      </strong>
-                      <p>Target: October 1, 2027 · confirm the official Steam Next Fest dates separately.</p>
+                      </strong> : <strong>No deadline set</strong>}
+                      <p>{deadline ? `Target: ${deadlineLabel}, ${currentGame?.deadlineTime} (${timeZone})` : "Open Game settings to choose a target date and time."}</p>
                     </div>
                     <div className="countdown-date">
-                      <span>DEMO BUILD TARGET</span>
-                      <b>OCT<br />’27</b>
+                      <span>GAME TARGET</span>
+                      <b>{deadline ? <>{deadline.toLocaleDateString("en", { month: "short", timeZone }).toUpperCase()}<br />{deadline.toLocaleDateString("en", { year: "numeric", timeZone })}</> : "—"}</b>
                     </div>
                   </section>
                   <section className="current-focus">
@@ -1039,7 +1028,7 @@ function App() {
                               setDraggingFocusId("");
                             }}
                           >
-                            <button
+                            <Button
                               className="focus-drag-handle"
                               type="button"
                               draggable
@@ -1057,7 +1046,7 @@ function App() {
                               }}
                             >
                               ⠿
-                            </button>
+                            </Button>
                             <label className="focus-complete" aria-label={`Mark ${item.title} ${item.completed ? "incomplete" : "complete"}`}>
                               <input
                                 type="checkbox"
@@ -1100,8 +1089,8 @@ function App() {
                                   />
                                 </label>
                                 <div className="focus-edit-actions">
-                                  <button type="submit">Save</button>
-                                  <button type="button" onClick={() => setEditingFocusId("")}>Cancel</button>
+                                  <Button type="submit">Save</Button>
+                                  <Button type="button" onClick={() => setEditingFocusId("")}>Cancel</Button>
                                 </div>
                               </form>
                             ) : (
@@ -1115,25 +1104,25 @@ function App() {
                                   )}
                                 </div>
                                 <div className="focus-item-actions">
-                                  <button
+                                  <Button
                                     className="focus-move"
                                     type="button"
                                     aria-label={`Move ${item.title} up`}
-                                    disabled={index === 0}
+                                    disabled={index === 0} disabledReason="This is already the first item in Current Focus."
                                     onClick={() => moveFocusItem(item.id, -1)}
                                   >
                                     ↑
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button
                                     className="focus-move"
                                     type="button"
                                     aria-label={`Move ${item.title} down`}
-                                    disabled={index === activeFocusItems.length - 1}
+                                    disabled={index === activeFocusItems.length - 1} disabledReason="This is already the last item in Current Focus."
                                     onClick={() => moveFocusItem(item.id, 1)}
                                   >
                                     ↓
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button
                                     className="focus-edit"
                                     type="button"
                                     onClick={() => {
@@ -1142,8 +1131,8 @@ function App() {
                                     }}
                                   >
                                     Edit
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button
                                     className="focus-remove"
                                     type="button"
                                     aria-label={`Remove ${item.title} from focus`}
@@ -1154,7 +1143,7 @@ function App() {
                                     }
                                   >
                                     Remove
-                                  </button>
+                                  </Button>
                                 </div>
                               </>
                             )}
@@ -1183,7 +1172,7 @@ function App() {
                           placeholder="https://..."
                         />
                       </label>
-                      <button type="submit">Add item <b>+</b></button>
+                      <Button type="submit">Add item <b>+</b></Button>
                       {focusError && <small className="focus-error" role="alert">{focusError}</small>}
                     </form>
                     <details className="focus-completed-section" aria-labelledby="completed-focus-heading" open>
@@ -1224,8 +1213,8 @@ function App() {
                                     <input name="edit-url" type="url" defaultValue={item.url} placeholder="https://..." />
                                   </label>
                                   <div className="focus-edit-actions">
-                                    <button type="submit">Save</button>
-                                    <button type="button" onClick={() => setEditingFocusId("")}>Cancel</button>
+                                    <Button type="submit">Save</Button>
+                                    <Button type="button" onClick={() => setEditingFocusId("")}>Cancel</Button>
                                   </div>
                                 </form>
                               ) : (
@@ -1235,15 +1224,15 @@ function App() {
                                     {item.url && <a href={item.url} target="_blank" rel="noreferrer">Open resource <span>↗</span></a>}
                                   </div>
                                   <div className="focus-item-actions">
-                                    <button className="focus-edit" type="button" onClick={() => setEditingFocusId(item.id)}>Edit</button>
-                                    <button
+                                    <Button className="focus-edit" type="button" onClick={() => setEditingFocusId(item.id)}>Edit</Button>
+                                    <Button
                                       className="focus-remove"
                                       type="button"
                                       aria-label={`Remove ${item.title} from completed`}
                                       onClick={() => setFocusItems((items) => items.filter((focusItem) => focusItem.id !== item.id))}
                                     >
                                       Remove
-                                    </button>
+                                    </Button>
                                   </div>
                                 </>
                               )}
@@ -1255,137 +1244,34 @@ function App() {
                       )}
                     </details>
                   </section>
+                  <div className="roadmap-heading-bar"><h2>Your roadmap stages</h2><Button type="button" onClick={addHeading}>+ Add stage</Button></div>
+                  {deadline && editableRoadmapStages.some(stage => stage.endsOn && stage.endsOn > (currentGame?.deadlineDate ?? "")) && <p className="deadline-warning">A stage runs beyond your deadline. Review its dates or adjust your game target in Game settings.</p>}
+                  {!displayStages.length && <p className="roadmap-empty">Your game's roadmap is ready to build. Add a stage, then add the tasks you want to work through.</p>}
                   <div className="roadmap-stages">
-                    {editableRoadmapStages.map((stage, index) => {
-                      const isEditingStage = roadmapStageDraft?.id === stage.id;
-                      return (
-                        <section className="roadmap-stage" key={stage.id}>
-                          <div className="stage-heading">
-                            <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
-                            <div>
-                              <span className="roadmap-overline">{stage.period}</span>
-                              {isEditingStage ? (
-                                <label className="stage-title-editor">
-                                  <span>SECTION TITLE</span>
-                                  <input
-                                    value={roadmapStageDraft.title}
-                                    onChange={(event) =>
-                                      setRoadmapStageDraft((draft) =>
-                                        draft
-                                          ? { ...draft, title: event.target.value }
-                                          : draft,
-                                      )
-                                    }
-                                    maxLength={100}
-                                  />
-                                </label>
-                              ) : (
-                                <h2>{stage.title}</h2>
-                              )}
-                              <p>{stage.description}</p>
-                            </div>
-                            {isEditingStage ? (
-                              <div className="stage-editor-actions">
-                                <button type="button" onClick={saveRoadmapStage}>Save</button>
-                                <button type="button" onClick={() => setRoadmapStageDraft(null)}>Cancel</button>
-                              </div>
-                            ) : (
-                              <button
-                                className="stage-edit-button"
-                                type="button"
-                                aria-label={`Edit ${stage.title}`}
-                                onClick={() => startEditingRoadmapStage(stage)}
-                              >
-                                Edit
-                              </button>
-                            )}
+                    {displayStages.map((stage, index) => (
+                      <section className="roadmap-stage" key={stage.id}>
+                        <div className="stage-heading">
+                          <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
+                          <div>
+                            <span className="roadmap-overline">{stage.period}{stage.id === currentRoadmapStage?.id ? " · CURRENT" : ""}</span>
+                            <h2>{stage.title}</h2><p>{stage.description}</p>
                           </div>
-                          <div className="roadmap-task-list">
-                            {isEditingStage
-                              ? roadmapStageDraft.tasks.map((task) => (
-                                  <div className="stage-task-editor" key={task.id}>
-                                    <input
-                                      value={task.label}
-                                      aria-label="Roadmap item"
-                                      maxLength={180}
-                                      onChange={(event) =>
-                                        setRoadmapStageDraft((draft) =>
-                                          draft
-                                            ? {
-                                                ...draft,
-                                                tasks: draft.tasks.map((draftTask) =>
-                                                  draftTask.id === task.id
-                                                    ? { ...draftTask, label: event.target.value }
-                                                    : draftTask,
-                                                ),
-                                              }
-                                            : draft,
-                                        )
-                                      }
-                                    />
-                                    <button
-                                      type="button"
-                                      aria-label={`Remove ${task.label}`}
-                                      onClick={() =>
-                                        setRoadmapStageDraft((draft) =>
-                                          draft
-                                            ? {
-                                                ...draft,
-                                                tasks: draft.tasks.filter(
-                                                  (draftTask) => draftTask.id !== task.id,
-                                                ),
-                                              }
-                                            : draft,
-                                        )
-                                      }
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                ))
-                              : stage.tasks.map((task) => (
-                                  <div className="essential-task" key={task.id}>
-                                    <div className="roadmap-task">{task.label}</div>
-                                    {stage.id === currentRoadmapStage?.id && (
-                                      <button
-                                        className="focus-add-task"
-                                        type="button"
-                                        aria-label={`Move ${task.label.replace(/^(Now|Next) — /, "")} to Current Focus`}
-                                        onClick={() =>
-                                          addTaskToFocus(
-                                            task,
-                                            `stage:${stage.id}:${task.id}`,
-                                          )
-                                        }
-                                      >
-                                        + Focus
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                          </div>
-                          {isEditingStage && (
-                            <form className="stage-add-task-form" onSubmit={addRoadmapStageTask}>
-                              <input
-                                value={newRoadmapTaskLabel}
-                                onChange={(event) => setNewRoadmapTaskLabel(event.target.value)}
-                                placeholder="Add a roadmap item"
-                                aria-label="New roadmap item"
-                                maxLength={180}
-                              />
-                              <button type="submit" disabled={!newRoadmapTaskLabel.trim()}>
-                                Add item +
-                              </button>
-                            </form>
-                          )}
-                        </section>
-                      );
-                    })}
+                          <Button className="stage-edit-button" type="button" aria-label={"Edit " + stage.title} onClick={() => startEditingRoadmapStage(stage)}>Edit</Button>
+                        </div>
+                        <div className="roadmap-task-list">{stage.tasks.map(task => (
+                          <FocusTaskRow key={task.id} task={task} inFocus={isTaskInFocus(focusItems, task.id)} onFocus={() => addTaskToFocus(task, task.id)} />
+                        ))}</div>
+                        <div className="roadmap-empty-tasks">{stage.tasks.length === 0 && <p>No tasks yet. Choose suggestions or write your own.</p>}
+                          <Button type="button" onClick={() => startEditingRoadmapStage(stage)}>+ Add tasks</Button>
+                        </div>
+                      </section>
+                    ))}
                   </div>
+                  {planSummary&&<section className="plan-milestone-checks"><h2>{planSummary.targetLabel.charAt(0).toUpperCase()+planSummary.targetLabel.slice(1)} acceptance goals</h2>{planSummary.notices.map(notice=><p key={notice}>{notice}</p>)}{planSummary.milestones.map(goal=><details key={goal.title}><summary>{goal.title}</summary><p>{goal.outcome}</p></details>)}</section>}
                   <section className="scope-note">
-                    <span className="roadmap-overline">KEEP THE DEMO FINISHABLE</span>
+                    <span className="roadmap-overline">KEEP YOUR NEXT TARGET FINISHABLE</span>
                     <p>
-                      Aim for one polished story route, a small cast, one or two compact locations, and a handful of meaningful choices. Make a complete vertical slice before expanding. Learn film/color theory and realism techniques alongside the project; avoid delaying production to master every Unity system.
+                      {planSummary?.scopeNote ?? "Build one complete playable unit before expanding. Keep learning connected to the next useful experiment and choose only the work your game needs."}
                     </p>
                   </section>
                   <section className="resource-shelf">
@@ -1396,7 +1282,6 @@ function App() {
                       </div>
                       <small>Useful references · not the current priority</small>
                     </div>
-                    <p className="download-note"><strong>Aikodex is a tool/resource, not the tutorials you downloaded.</strong> Your Real-time Animated Storytelling tutorials are a separate downloaded resource; work through them when they fit your schedule.</p>
                     <div className="resource-list">
                       {roadmapResources.map((resource) => (
                         <a href={resource.href} target="_blank" rel="noreferrer" key={resource.title}>
@@ -1405,50 +1290,59 @@ function App() {
                         </a>
                       ))}
                     </div>
-                    <p className="later-topics">The optional curriculum below also covers deeper facial animation/lip sync, NPC AI, advanced rendering, DOTS/ECS, and other systems beyond this demo's essentials.</p>
+                    <p className="later-topics">Use these references to explore engine concepts at your own pace.</p>
                   </section>
                   <section className="curriculum-shelf">
                     <div className="resource-heading">
                       <div>
                         <span className="roadmap-overline">OPTIONAL · FUTURE LEARNING</span>
-                        <h2>Full Unity roadmap</h2>
+                        <h2>{curriculumTitle}</h2>
                       </div>
+                      <small>{curriculumParts.length === 3 ? "3 learning areas" : `${curriculumParts.reduce((count, part) => count + part.phases.length, 0)} phases`} · {engineTopicCount} topics</small>
                     </div>
                     <p className="curriculum-intro">
-                      This is the complete nine-phase curriculum you listed. It’s here as a reference if you choose to study beyond what the demo needs; it is not a prerequisite or a reason to delay making the game. Expand a phase to review its topics.
+                      A standalone optional learning path for general game development, foundational concepts and advanced engine skills. Its content follows engine choice only; until an engine is selected, it begins with shared foundations. Explore one area or phase at a time, with no completion deadline.
                     </p>
-                    <div className="curriculum-phases">
-                      {optionalCurriculum.map((phase) => {
-                        return (
-                          <details className="curriculum-phase" key={phase.id}>
-                            <summary>
-                              <span>{phase.title}</span>
-                            </summary>
-                            <div className="roadmap-task-list">
-                              {phase.topics.map((topic) => (
-                                <div className="essential-task" key={topic.id}>
-                                  <div className="roadmap-task">{topic.label}</div>
-                                  <button
-                                    className="focus-add-task"
-                                    type="button"
-                                    aria-label={`Move ${topic.label} to Current Focus`}
-                                    onClick={() =>
-                                      addTaskToFocus(
-                                        topic,
-                                        `curriculum:${phase.id}:${topic.id}`,
-                                      )
-                                    }
-                                  >
-                                    + Focus
-                                  </button>
+                    <div className="curriculum-phase-groups">
+                      {curriculumParts.map((part) => (
+                        <section className="curriculum-phase-group" key={part.id}>
+                          <div className="curriculum-group-heading">
+                            <div><span className="roadmap-overline">LEARNING AREA</span><h3>{part.title}</h3></div>
+                            <p>{part.description}</p>
+                          </div>
+                          <div className="curriculum-phases">
+                            {part.phases.map((phase) => (
+                              <details className="curriculum-phase" key={phase.id}>
+                                <summary><span>{phase.title}</span><small>{phase.topics.length} TOPICS</small></summary>
+                                {phase.description && <p className="curriculum-phase-description">{phase.description}</p>}
+                                <div className="roadmap-task-list">
+                                  {phase.topics.map((topic) => (
+                                    <FocusTaskRow key={topic.id} task={topic} inFocus={isTaskInFocus(focusItems, topic.id)} onFocus={() => addTaskToFocus(topic, topic.id)} />
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          </details>
-                        );
-                      })}
+                              </details>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
                     </div>
                   </section>
+                  {optionalCurriculum.filter((phase) => phase.gameSpecific).map((phase) => (
+                    <section className="game-specific-learning-shelf" key={phase.id}>
+                      <span className="roadmap-overline">FOR THIS GAME · OPTIONAL</span>
+                      <h2>Extra topics for this game</h2>
+                      <p className="curriculum-intro">These practice ideas come from this game’s selected systems, content and target devices. This separate list does not change the full engine learning roadmap.</p>
+                      <details className="curriculum-phase">
+                        <summary><span>View {phase.topics.length} selected topics</span></summary>
+                        <p className="curriculum-phase-description">{phase.description}</p>
+                        <div className="roadmap-task-list">
+                          {phase.topics.map((topic) => (
+                            <FocusTaskRow key={topic.id} task={topic} inFocus={isTaskInFocus(focusItems, topic.id)} onFocus={() => addTaskToFocus(topic, topic.id)} />
+                          ))}
+                        </div>
+                      </details>
+                    </section>
+                  ))}
                 </div>
               ) : activeArticle.id === "doc-1" ? (
                 <div className="read-only-notes">
@@ -1462,7 +1356,7 @@ function App() {
                     ? activeArticle.body
                     : ["Section notes"]
                   ).map((fieldLabel, index) => {
-                    const fieldId = `${activeArticle.id}-${index}`;
+                    const fieldId = activeArticle.fieldKeys[index] ?? `${activeArticle.id}-${index}`;
                     return (
                       <NoteField
                         fieldId={fieldId}
@@ -1487,28 +1381,28 @@ function App() {
                   <span className="quick-number">A</span>
                   <div>
                     <small>PREVIOUS ENTRY</small>
-                    <button
+                    <Button
                       type="button"
                       onClick={() =>
                         previousArticle && selectArticle(previousArticle.id)
                       }
                     >
                       {previousArticle?.title ?? "Start of document"} <b>↗</b>
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div>
                   <span className="quick-number">B</span>
                   <div>
                     <small>NEXT ENTRY</small>
-                    <button
+                    <Button
                       type="button"
                       onClick={() =>
                         nextArticle && selectArticle(nextArticle.id)
                       }
                     >
                       {nextArticle?.title ?? "End of document"} <b>↗</b>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1516,9 +1410,9 @@ function App() {
           )}
           {!query && !isRoadmapPage && (
             <footer className="article-footer">
-              <button
+              <Button
                 type="button"
-                disabled={!previousArticle}
+                disabled={!previousArticle} disabledReason="This is the first page of the documentation."
                 onClick={() =>
                   previousArticle && selectArticle(previousArticle.id)
                 }
@@ -1526,16 +1420,16 @@ function App() {
                 <span>←</span>
                 <small>PREVIOUS</small>
                 <strong>{previousArticle?.title ?? "Start"}</strong>
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                disabled={!nextArticle}
+                disabled={!nextArticle} disabledReason="This is the last page of the documentation."
                 onClick={() => nextArticle && selectArticle(nextArticle.id)}
               >
                 <small>NEXT</small>
                 <strong>{nextArticle?.title ?? "End of guide"}</strong>
                 <span>→</span>
-              </button>
+              </Button>
             </footer>
           )}
         </div>
